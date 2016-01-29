@@ -6,6 +6,7 @@
 #cython: profile=False
 
 import numpy as np
+import scipy.signal
 cimport numpy as np
 cimport cython
 
@@ -78,8 +79,15 @@ cpdef double[:,:] abc_reject(
     normalize(norm_observed)
 
     cdef unsigned int n_sumstats = len(sumstats)
-    cdef double[:] obs_ss = np.array([sumstats[ii](norm_observed) for ii in range(n_sumstats)])
-    cdef double[:] sim_ss = np.empty(n_sumstats)
+
+    cdef double[:] obs_ss
+    cdef double[:] sim_ss
+    if n_sumstats > 0:
+        obs_ss = np.array([sumstats[ii](norm_observed) for ii in range(n_sumstats)])
+        sim_ss = np.empty(n_sumstats)
+    else:
+        obs_ss = observed
+        sim_ss = np.empty(n_simu)
 
     cdef double[:,:] result = np.empty((n_output, n_params))
     result[0, :] = init_guess
@@ -94,13 +102,16 @@ cpdef double[:,:] abc_reject(
                 params_prop[jj] = distribs[jj].rvs(result[ii-1, jj], sd)
 
             simulated = simu.run(params_prop, fixed_params, n_simu)
-            normalize(simulated)
+            # normalize(simulated)
 
-            for kk in range(n_sumstats):
-                sim_ss[kk] = sumstats[kk](simulated)
+            if n_sumstats > 0:
+                for kk in range(n_sumstats):
+                    sim_ss[kk] = sumstats[kk](simulated)
+            else:
+                sim_ss[:] = simulated
 
             acc_counter += 1
-            if (distance(sim_ss, obs_ss) < epsilon):
+            if (distance(obs_ss, sim_ss) < epsilon):
                 break
 
         result[ii, :] = params_prop
@@ -148,15 +159,22 @@ cpdef double[:,:] abc_mcmc(
     normalize(norm_observed)
 
     cdef unsigned int n_sumstats = len(sumstats)
-    cdef double[:] obs_ss = np.array([sumstats[ii](norm_observed) for ii in range(n_sumstats)])
-    cdef double[:] sim_ss = np.empty(n_sumstats)
+    cdef double[:] obs_ss
+    cdef double[:] sim_ss
+    if n_sumstats > 0:
+        obs_ss = np.array([sumstats[ii](norm_observed) for ii in range(n_sumstats)])
+        sim_ss = np.empty(n_sumstats)
+    else:
+        obs_ss = observed
+        sim_ss = np.empty(n_simu)
+
     cdef double accprob
 
     cdef double[:,:] result = np.empty((n_output, n_params))
 
     # initial guess from ABC rejection sampler
     result[0, :] = abc_reject(simu, fixed_params, observed, distance, sumstats,
-                              distribs, 2, epsilon/10., init_guess, sd)[1, :]
+                              distribs, 2, epsilon, init_guess, sd)[1, :]
 
     cdef int acc_counter = 0
     cdef bool accept_MH = True
@@ -168,10 +186,13 @@ cpdef double[:,:] abc_mcmc(
             params_prop[jj] = distribs[jj].rvs(result[ii-1, jj], sd)
 
         simulated = simu.run(params_prop, fixed_params, n_simu)
-        normalize(simulated)
+        # normalize(simulated)
 
-        for kk in range(n_sumstats):
-            sim_ss[kk] = sumstats[kk](simulated)
+        if n_sumstats > 0:
+            for kk in range(n_sumstats):
+                sim_ss[kk] = sumstats[kk](simulated)
+        else:
+            sim_ss[:] = simulated
 
         if not symmetric_proposal:  # no need to evaluate the MH-ratio
             accprob = 1.
@@ -180,7 +201,7 @@ cpdef double[:,:] abc_mcmc(
                            / distribs[jj].pdf(params_prop[jj], result[ii-1, jj], sd) )
             accept_MH = accprob >= runif()
 
-        if (accept_MH and distance(sim_ss, obs_ss) < epsilon):
+        if (accept_MH and distance(obs_ss, sim_ss) < epsilon):
             result[ii, :] = params_prop
             acc_counter += 1
         else:

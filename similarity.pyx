@@ -1,10 +1,10 @@
 # ****************** Distance functions ***************
 
-cdef class Distance:
+cdef class Distance(object):
     """
     A dummy parent class for distance functions.
     """
-    def __call__(self, double[:] observed, double[:] simulated):
+    def __call__(self, double[:] data1, double[:] data2):
         pass
 
 
@@ -12,12 +12,12 @@ cdef class Distance_L2(Distance):
     """
     (Squared) L2 distance between two vectors.
     """
-    def __call__(self, double[:] observed, double[:] simulated):
+    def __call__(self, double[:] data1, double[:] data2):
         cdef double result = 0.
-        cdef unsigned int ii
+        cdef int ii
 
-        for ii in range(observed.shape[0]):
-            result += (observed[ii] - simulated[ii]) ** 2.
+        for ii in range(data1.shape[0]):
+            result += (data1[ii] - data2[ii]) ** 2.
 
         return result
 
@@ -25,12 +25,12 @@ cdef class Distance_L1(Distance):
     """
     L1 distance between two vectors.
     """
-    def __call__(self, double[:] observed, double[:] simulated):
+    def __call__(self, double[:] data1, double[:] data2):
         cdef double result = 0.
-        cdef unsigned int ii
+        cdef int ii
 
-        for ii in range(observed.shape[0]):
-            result += (observed[ii] - simulated[ii])
+        for ii in range(data1.shape[0]):
+            result += (data1[ii] - data2[ii])
 
         return result
 
@@ -38,12 +38,12 @@ cdef class Distance_L2_Nrlz(Distance):
     """
     (Squared) L2 distance between two vectors normalized by observation.
     """
-    def __call__(self, double[:] observed, double[:] simulated):
+    def __call__(self, double[:] data1, double[:] data2):
         cdef double result = 0.
-        cdef unsigned int ii
+        cdef int ii
 
-        for ii in range(observed.shape[0]):
-            result += ((observed[ii] - simulated[ii]) / observed[ii]) ** 2.
+        for ii in range(data1.shape[0]):
+            result += ((data1[ii] - data2[ii]) / data1[ii]) ** 2.
 
         return result
 
@@ -55,9 +55,9 @@ cdef class Distance_INT_PER(Distance):
     cdef int nn
     cdef double[:] window
     cdef double[:] spec0
-    def __init__(self, double[:] observed):
-        self.window = scipy.signal.get_window( ('tukey', 0.1), observed.shape[0])
-        self.spec0 = scipy.signal.periodogram(observed, window=self.window)[1]
+    def __init__(self, double[:] data1):
+        self.window = scipy.signal.get_window( ('tukey', 0.1), data1.shape[0])
+        self.spec0 = scipy.signal.periodogram(data1, window=self.window)[1]
         self.nn = self.spec0.shape[0]
 
         cdef int ii
@@ -66,10 +66,10 @@ cdef class Distance_INT_PER(Distance):
         for ii in range(self.nn):
             self.spec0[ii] /= spec_sum
 
-    def __call__(self, double[:] observed, double[:] simulated):
-        cdef double[:] spec1 = scipy.signal.periodogram(simulated, window=self.window)[1]
+    def __call__(self, double[:] data1, double[:] data2):
+        cdef double[:] spec1 = scipy.signal.periodogram(data2, window=self.window)[1]
 
-        # cdef complex[:] fft = np.fft.rfft(simulated)
+        # cdef complex[:] fft = np.fft.rfft(data2)
         # cdef double[:] spec1 = np.empty(nn)
 
         cdef int ii
@@ -84,9 +84,103 @@ cdef class Distance_INT_PER(Distance):
             cumsum += self.spec0[ii] - spec1[ii]
             dist += abs(cumsum)
 
-        # cdef double meandif = (sum_of(observed) - sum_of(simulated)) / observed.shape[0]
+        # cdef double meandif = (sum_of(data1) - sum_of(data2)) / data1.shape[0]
 
         return dist #+ abs(meandif)
+
+
+cdef class Distance_DTW(Distance):
+    """
+    Dynamic time warping without locality constraint.
+    """
+    cdef int window
+
+    def __init__(self, int window=-1):
+        self.window = window
+
+    def __call__(self, double[:] data1, double[:] data2):
+        cdef int nn = data1.shape[0]
+        cdef double[:, :] arr = np.empty((nn, nn))
+        cdef int ii, jj
+        cdef double eucl
+        cdef int jj_min=1, jj_max=nn
+
+        for ii in range(nn):
+            for jj in range(nn):
+                arr[ii, jj] = INFINITY
+        arr[0, 0] = 0.
+
+        for ii in range(1, nn):
+
+            if self.window > 0:
+                jj_min = 1 if (ii-self.window < 1) else ii-self.window
+                jj_max = nn if (ii+self.window+1 > nn) else ii+self.window+1
+
+            for jj in range(jj_min, jj_max):
+                eucl = (data1[ii] - data2[jj])**2.
+                arr[ii, jj] = eucl + fmin( arr[ii-1, jj],
+                                           fmin( arr[ii, jj-1], arr[ii-1, jj-1] ))
+
+        return arr[nn-1, nn-1]
+
+
+cdef class Distance_DTW_Keogh(Distance_DTW):
+    """
+    Dynamic time warping accelerated by Keogh's lower bounds.
+    """
+    cdef int reach
+    cdef double dist_min
+    cdef double obs_prev
+
+    def __init__(self, int window=-1, int reach=5):
+        self.window = window
+        self.reach = reach
+        self.obs_prev = -1234.1234  # "random"
+
+    def __call__(self, double[:] data1, double[:] data2):
+        cdef double result
+
+        # a rough test to check if the data is "new"
+        if self.obs_prev != data1[0]:
+            self.obs_prev = data1[0]
+            self.dist_min = INFINITY
+            print "set dist to inf"
+
+        # LB_Keogh <= DTW
+        result = self.lowerbound_Keogh( data1, data2 )
+
+        # evaluate DTW only if LB_Keogh small enough
+        if self.dist_min > result:
+            result = super(Distance_DTW_Keogh, self).__call__(data1, data2)
+            self.dist_min = result
+
+        return result
+
+    cdef double lowerbound_Keogh(self, double[:] data1, double[:] data2):
+        """
+        Keogh's lower bound for dynamic time warping.
+        """
+        cdef double lb_sum = 0.
+        cdef double lowerbound, upperbound
+        cdef int nn = data1.shape[0]
+        cdef int ii, jj, jj_min, jj_max
+
+        for ii in range(nn):
+            lowerbound = INFINITY
+            upperbound = -INFINITY
+            jj_min = 0 if (ii-self.reach < 0) else ii-self.reach
+            jj_max = nn if (ii+self.reach+1 > nn) else ii+self.reach+1
+            for jj in range(jj_min, jj_max):
+                lowerbound = fmin( data2[jj], lowerbound )
+                upperbound = fmax( data2[jj], upperbound )
+
+            if data1[ii] > upperbound:
+                lb_sum += (data1[ii] - upperbound)**2.
+            elif data1[ii] < lowerbound:
+                lb_sum += (data1[ii] - lowerbound)**2.
+
+        return lb_sum
+
 
 # ****************** Summary statistics ***************
 
@@ -101,14 +195,14 @@ cdef class SS_Autocov(SummaryStat):
     """
     Autocovariance of a vector (sort of) with lag.
     """
-    cdef unsigned int lag
+    cdef int lag
 
-    def __init__(self, unsigned int lag):
+    def __init__(self, int lag):
         self.lag = lag
 
     def __call__(self, double[:] data):
         cdef double result = 0.
-        cdef unsigned int ii
+        cdef int ii
 
         for ii in range(self.lag+1, data.shape[0]):
             result += data[ii] * data[ii-self.lag]
@@ -122,6 +216,21 @@ cdef class SS_Mean(SummaryStat):
     def __call__(self, double[:] data):
         return sum_of(data) / data.shape[0]
 
+cdef class SS_Var(SummaryStat):
+    """
+    Variance of a vector.
+    """
+    def __call__(self, double[:] data):
+        cdef int nn = data.shape[0]
+        cdef double mean = sum_of(data) / nn
+
+        cdef int ii
+        cdef double result = 0.
+        for ii in range(nn):
+            result += (data[ii] - mean)**2.
+
+        return result / nn
+
 
 # ****************** Normalizing function ***************
 
@@ -133,9 +242,9 @@ cdef inline void normalize(double[:] vector) nogil:
     """
     cdef double mean = 0.
     cdef double var = 0.
-    cdef unsigned int ii
+    cdef int ii
 
-    cdef unsigned int nn = vector.shape[0]
+    cdef int nn = vector.shape[0]
 
     for ii in range(nn):
         mean += vector[ii]
@@ -156,7 +265,7 @@ cdef inline void normalize(double[:] vector) nogil:
 # ****************** Helper functions ***************
 
 cpdef sum_of(double[:] data):
-    cdef unsigned int ii
+    cdef int ii
     cdef double sum0 = 0.
 
     for ii in range(data.shape[0]):

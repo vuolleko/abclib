@@ -67,7 +67,7 @@ cdef class Poisson(Distribution):
         The inherited parameter 'scale' is unused.
         """
         cdef int factorial = 1
-        cdef unsigned int ii
+        cdef int ii
         cdef int kk = int(x)
 
         for ii in range(2, kk+1):

@@ -5,8 +5,42 @@ cdef class Simulator:
     A dummy parent class for simulators.
     """
     cpdef double[:] run(self, double[:] params, double[:] fixed_params,
-                        unsigned int n_simu):
+                        int n_simu):
         pass
+
+
+cdef class Gauss(Simulator):
+    """
+    Gaussian simulator.
+    """
+    cpdef double[:] run(self, double[:] params, double[:] fixed_params,
+                        int n_simu):
+        cdef double[:] result = np.empty(n_simu)
+        cdef int ii
+
+        for ii in range(n_simu):
+            result[ii] = params[0] + Normal().rvs() * params[1]
+
+        return result
+
+
+cdef class MA1(Simulator):
+    """
+    MA(1) simulator.
+    """
+    cpdef double[:] run(self, double[:] params, double[:] fixed_params,
+                        int n_simu):
+        cdef double[:] iids = np.empty(n_simu+1)
+        cdef double[:] result = np.empty(n_simu)
+        cdef int ii
+
+        for ii in range(n_simu+1):
+            iids[ii] = Normal().rvs()
+
+        for ii in range(n_simu):
+            result[ii] = iids[ii+1] + params[0] * iids[ii]
+
+        return result
 
 
 cdef class MA2(Simulator):
@@ -14,10 +48,10 @@ cdef class MA2(Simulator):
     MA(2) simulator.
     """
     cpdef double[:] run(self, double[:] params, double[:] fixed_params,
-                        unsigned int n_simu):
+                        int n_simu):
         cdef double[:] iids = np.empty(n_simu+2)
         cdef double[:] result = np.empty(n_simu)
-        cdef unsigned int ii
+        cdef int ii
 
         for ii in range(n_simu+2):
             iids[ii] = Normal().rvs()
@@ -39,12 +73,12 @@ cdef class Ricker(Simulator):
         self.capacity = capacity
 
     cpdef double[:] run(self, double[:] params, double[:] fixed_params,
-                        unsigned int n_simu):
+                        int n_simu):
         """
         - params[0]: rate
         """
         cdef double[:] stock = np.empty(n_simu)
-        cdef unsigned int ii
+        cdef int ii
 
         stock[0] = 1e-6
         for ii in range(1, n_simu):
@@ -68,19 +102,19 @@ cdef class StochasticRicker(Simulator):
         self.scaling = scaling
 
     cpdef double[:] run(self, double[:] params, double[:] fixed_params,
-                        unsigned int n_simu):
+                        int n_simu):
         """
         - params[0]: rate
         """
         cdef double[:] stock = np.empty(n_simu)
-        cdef unsigned int ii
+        cdef int ii
 
         stock[0] = 1e-6
         for ii in range(1, n_simu):
             stock[ii] = stock[ii-1] * exp(params[0] - stock[ii-1] +
                                           Normal().rvs(0., self.sd))
 
-        # the observed is Poisson distributed
+        # the observed stock is Poisson distributed
         for ii in range(n_simu):
             stock[ii] = Poisson().rvs(stock[ii] * self.scaling)
 

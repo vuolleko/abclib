@@ -10,6 +10,8 @@ import scipy.signal
 cimport numpy as np
 cimport cython
 
+from numpy.math cimport INFINITY
+
 # some stuff from C libraries
 from cpython cimport bool  # Python type
 from libc.stdlib cimport rand, RAND_MAX, srand
@@ -23,9 +25,18 @@ cdef extern from "math.h":
     double exp(double x) nogil
     double log(double x) nogil
     double cos(double x) nogil
+    double fmin(double x, double y) nogil
+    double fmax(double x, double y) nogil
 
 # define constants
 cdef double PI = np.pi
+
+
+cpdef void init_rand():
+    """
+    Initialize the pseudo random number generator.
+    """
+    srand( time(NULL) )
 
 
 @cython.profile(False)
@@ -39,6 +50,7 @@ cdef inline double runif():
 include "distributions.pyx"
 include "similarity.pyx"
 include "simulators.pyx"
+include "classification.pyx"
 
 
 # ************* Approximate Bayesian computation ************
@@ -50,7 +62,7 @@ cpdef double[:,:] abc_reject(
                              Distance distance,
                              sumstats,
                              distribs,
-                             unsigned int n_output,
+                             int n_output,
                              double epsilon,
                              double[:] init_guess,
                              double sd
@@ -69,21 +81,18 @@ cpdef double[:,:] abc_reject(
     - init_guess: guess
     - sd: standard deviation of the kernel
     """
-    cdef unsigned int n_params = len(distribs)
-    cdef unsigned int n_simu = observed.shape[0]
-    cdef unsigned int ii, jj, kk
+    cdef int n_params = len(distribs)
+    cdef int n_simu = observed.shape[0]
+    cdef int ii, jj, kk
     cdef double[:] params_prop = np.empty(n_params)
     cdef double[:] simulated = np.empty_like(observed)
 
-    cdef double[:] norm_observed = observed.copy()
-    normalize(norm_observed)
-
-    cdef unsigned int n_sumstats = len(sumstats)
+    cdef int n_sumstats = len(sumstats)
 
     cdef double[:] obs_ss
     cdef double[:] sim_ss
     if n_sumstats > 0:
-        obs_ss = np.array([sumstats[ii](norm_observed) for ii in range(n_sumstats)])
+        obs_ss = np.array([sumstats[ii](observed) for ii in range(n_sumstats)])
         sim_ss = np.empty(n_sumstats)
     else:
         obs_ss = observed
@@ -94,15 +103,12 @@ cpdef double[:,:] abc_reject(
 
     cdef int acc_counter = 0
 
-    srand(time(NULL))  # init pseudo random number generator
-
     for ii in range(1, n_output):
         while True:
             for jj in range(n_params):
                 params_prop[jj] = distribs[jj].rvs(result[ii-1, jj], sd)
 
             simulated = simu.run(params_prop, fixed_params, n_simu)
-            # normalize(simulated)
 
             if n_sumstats > 0:
                 for kk in range(n_sumstats):
@@ -128,7 +134,7 @@ cpdef double[:,:] abc_mcmc(
                            Distance distance,
                            sumstats,
                            distribs,
-                           unsigned int n_output,
+                           int n_output,
                            double epsilon,
                            double[:] init_guess,
                            double sd,
@@ -149,20 +155,17 @@ cpdef double[:,:] abc_mcmc(
     - sd: standard deviation of the kernel
     - symmetric_proposal: whether the kernel is symmetric
     """
-    cdef unsigned int n_params = len(distribs)
-    cdef unsigned int n_simu = observed.shape[0]
-    cdef unsigned int ii, jj
+    cdef int n_params = len(distribs)
+    cdef int n_simu = observed.shape[0]
+    cdef int ii, jj
     cdef double[:] params_prop = np.empty(n_params)
     cdef double[:] simulated = np.empty_like(observed)
 
-    cdef double[:] norm_observed = observed.copy()
-    normalize(norm_observed)
-
-    cdef unsigned int n_sumstats = len(sumstats)
+    cdef int n_sumstats = len(sumstats)
     cdef double[:] obs_ss
     cdef double[:] sim_ss
     if n_sumstats > 0:
-        obs_ss = np.array([sumstats[ii](norm_observed) for ii in range(n_sumstats)])
+        obs_ss = np.array([sumstats[ii](observed) for ii in range(n_sumstats)])
         sim_ss = np.empty(n_sumstats)
     else:
         obs_ss = observed
@@ -171,22 +174,16 @@ cpdef double[:,:] abc_mcmc(
     cdef double accprob
 
     cdef double[:,:] result = np.empty((n_output, n_params))
-
-    # initial guess from ABC rejection sampler
-    result[0, :] = abc_reject(simu, fixed_params, observed, distance, sumstats,
-                              distribs, 2, epsilon, init_guess, sd)[1, :]
+    result[0, :] = init_guess
 
     cdef int acc_counter = 0
     cdef bool accept_MH = True
-
-    srand(time(NULL))  # init pseudo random number generator
 
     for ii in range(1, n_output):
         for jj in range(n_params):
             params_prop[jj] = distribs[jj].rvs(result[ii-1, jj], sd)
 
         simulated = simu.run(params_prop, fixed_params, n_simu)
-        # normalize(simulated)
 
         if n_sumstats > 0:
             for kk in range(n_sumstats):

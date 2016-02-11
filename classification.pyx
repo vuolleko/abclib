@@ -14,7 +14,7 @@ cdef class Classifier(Distance):
     cdef int[:] labels
     cdef int[:] inds
 
-    def __init__(self, int n_observed, int n_folds=5, int n_features=1,
+    def __cinit__(self, int n_observed, int n_folds=5, int n_features=1,
                  Distance distance=Distance_L2()):
         self.n_folds = n_folds
         self.n_features = n_features

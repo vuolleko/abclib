@@ -27,6 +27,7 @@ cdef extern from "math.h":
     double cos(double x) nogil
     double fmin(double x, double y) nogil
     double fmax(double x, double y) nogil
+    double pow(double x, double y) nogil
 
 # define constants
 cdef double PI = np.pi
@@ -40,7 +41,7 @@ cpdef void init_rand():
 
 
 @cython.profile(False)
-cdef inline double runif():
+cdef inline double runif() nogil:
     """
     Generates a random number in the range [0,1]
     """
@@ -60,8 +61,8 @@ cpdef double[:,:] abc_reject(
                              double[:] fixed_params,
                              double[:] observed,
                              Distance distance,
-                             sumstats,
-                             distribs,
+                             list sumstats,
+                             list distribs,
                              int n_output,
                              double epsilon,
                              double[:] init_guess,
@@ -74,8 +75,8 @@ cpdef double[:,:] abc_reject(
     - fixed_params: constant parameter for the simulator
     - observed: a vector of observations
     - distance: instance of distance class
-    - sumstats: list of instances of summary statistics classes
-    - distribs: list of parameter distributions
+    - sumstats: list of instances of summary statistics class
+    - distribs: list of instances of distribution class for parameters
     - n_output: number of output samples
     - epsilon: tolerance in acceptance criterion
     - init_guess: guess
@@ -92,7 +93,8 @@ cpdef double[:,:] abc_reject(
     cdef double[:] obs_ss
     cdef double[:] sim_ss
     if n_sumstats > 0:
-        obs_ss = np.array([sumstats[ii](observed) for ii in range(n_sumstats)])
+        obs_ss = np.array([(<SummaryStat> sumstats[ii]).get(observed)
+                           for ii in range(n_sumstats)])
         sim_ss = np.empty(n_sumstats)
     else:
         obs_ss = observed
@@ -106,13 +108,13 @@ cpdef double[:,:] abc_reject(
     for ii in range(1, n_output):
         while True:
             for jj in range(n_params):
-                params_prop[jj] = distribs[jj].rvs(result[ii-1, jj], sd)
+                params_prop[jj] = (<Distribution>distribs[jj]).rvs(result[ii-1, jj], sd)
 
-            simulated = simu.run(params_prop, fixed_params, n_simu)
+            simulated = simu(params_prop, fixed_params, n_simu)
 
             if n_sumstats > 0:
                 for kk in range(n_sumstats):
-                    sim_ss[kk] = sumstats[kk](simulated)
+                    sim_ss[kk] = (<SummaryStat> sumstats[kk]).get(simulated)
             else:
                 sim_ss[:] = simulated
 
@@ -132,8 +134,8 @@ cpdef double[:,:] abc_mcmc(
                            double[:] fixed_params,
                            double[:] observed,
                            Distance distance,
-                           sumstats,
-                           distribs,
+                           list sumstats,
+                           list distribs,
                            int n_output,
                            double epsilon,
                            double[:] init_guess,
@@ -147,8 +149,8 @@ cpdef double[:,:] abc_mcmc(
     - fixed_params: constant parameter for the simulator
     - observed: a vector of observations
     - distance: instance of distance class
-    - sumstats: list of instances of summary statistics classes
-    - distribs: list of parameter distributions
+    - sumstats: list of instances of summary statistics class
+    - distribs: list of instances of distribution class for parameters
     - n_output: number of output samples
     - epsilon: tolerance in acceptance criterion
     - init_guess: guess
@@ -165,7 +167,8 @@ cpdef double[:,:] abc_mcmc(
     cdef double[:] obs_ss
     cdef double[:] sim_ss
     if n_sumstats > 0:
-        obs_ss = np.array([sumstats[ii](observed) for ii in range(n_sumstats)])
+        obs_ss = np.array([(<SummaryStat> sumstats[ii]).get(observed)
+                           for ii in range(n_sumstats)])
         sim_ss = np.empty(n_sumstats)
     else:
         obs_ss = observed
@@ -181,21 +184,23 @@ cpdef double[:,:] abc_mcmc(
 
     for ii in range(1, n_output):
         for jj in range(n_params):
-            params_prop[jj] = distribs[jj].rvs(result[ii-1, jj], sd)
+            params_prop[jj] = (<Distribution>distribs[jj]).rvs(result[ii-1, jj], sd)
 
-        simulated = simu.run(params_prop, fixed_params, n_simu)
+        simulated = simu(params_prop, fixed_params, n_simu)
 
         if n_sumstats > 0:
             for kk in range(n_sumstats):
-                sim_ss[kk] = sumstats[kk](simulated)
+                sim_ss[kk] = (<SummaryStat> sumstats[kk]).get(simulated)
         else:
             sim_ss[:] = simulated
 
         if not symmetric_proposal:  # no need to evaluate the MH-ratio
             accprob = 1.
             for jj in range(n_params):
-                accprob *= ( distribs[jj].pdf(result[ii-1, jj], params_prop[jj], sd)
-                           / distribs[jj].pdf(params_prop[jj], result[ii-1, jj], sd) )
+                accprob *= ( (<Distribution>distribs[jj]).pdf( result[ii-1, jj],
+                             params_prop[jj], sd )
+                           / (<Distribution>distribs[jj]).pdf( params_prop[jj],
+                             result[ii-1, jj], sd ) )
             accept_MH = accprob >= runif()
 
         if (accept_MH and distance.get(obs_ss, sim_ss) < epsilon):

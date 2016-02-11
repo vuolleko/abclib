@@ -53,7 +53,6 @@ cdef class Distance_L2_Nrlz(Distance):
 
         return result
 
-# cdef class Distance_W_DLS(Distance):
 cdef class Distance_INT_PER(Distance):
     """
     Distance based on integrated periodogram.
@@ -61,7 +60,7 @@ cdef class Distance_INT_PER(Distance):
     cdef int nn
     cdef double[:] window
     cdef double[:] spec0
-    def __init__(Distance_INT_PER self, double[:] data1):
+    def __cinit__(Distance_INT_PER self, double[:] data1):
         self.window = scipy.signal.get_window( ('tukey', 0.1), data1.shape[0])
         self.spec0 = scipy.signal.periodogram(data1, window=self.window)[1]
         self.nn = self.spec0.shape[0]
@@ -101,7 +100,7 @@ cdef class Distance_DTW(Distance):
     """
     cdef int window
 
-    def __init__(Distance_DTW self, int window=-1):
+    def __cinit__(Distance_DTW self, int window=-1):
         self.window = window
 
     cdef double get(Distance_DTW self, double[:] data1, double[:] data2):
@@ -138,7 +137,7 @@ cdef class Distance_DTW_Keogh(Distance_DTW):
     cdef double dist_min
     cdef double obs_prev
 
-    def __init__(Distance_DTW_Keogh self, int window=-1, int reach=5):
+    def __cinit__(Distance_DTW_Keogh self, int window=-1, int reach=5):
         self.window = window
         self.reach = reach
         self.obs_prev = -1234.1234  # "random"
@@ -195,6 +194,9 @@ cdef class SummaryStat:
     A dummy parent class for summary statistics functions.
     """
     def __call__(self, double[:] data):
+        return self.get(data)
+
+    cdef double get(SummaryStat self, double[:] data):
         pass
 
 cdef class SS_Autocov(SummaryStat):
@@ -203,10 +205,10 @@ cdef class SS_Autocov(SummaryStat):
     """
     cdef int lag
 
-    def __init__(SS_Autocov self, int lag):
+    def __cinit__(SS_Autocov self, int lag):
         self.lag = lag
 
-    def __call__(SS_Autocov self, double[:] data):
+    cdef double get(SS_Autocov self, double[:] data):
         cdef double result = 0.
         cdef int ii
 
@@ -219,14 +221,14 @@ cdef class SS_Mean(SummaryStat):
     """
     Arithmetic mean of vector.
     """
-    def __call__(SS_Mean self, double[:] data):
+    cdef double get(SS_Mean self, double[:] data):
         return sum_of(data) / data.shape[0]
 
 cdef class SS_Var(SummaryStat):
     """
     Variance of a vector.
     """
-    def __call__(SS_Var self, double[:] data):
+    cdef double get(SS_Var self, double[:] data):
         cdef int nn = data.shape[0]
         cdef double mean = sum_of(data) / nn
 

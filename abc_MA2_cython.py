@@ -7,22 +7,22 @@ n_obs = 100
 params_true = np.array([1.4, 0.8])
 params_guess = np.array([2., 1.])
 params_const = np.array([])
-n_sets = 1e5
+n_sets = 1e6
 epsilon = 50.
 # n_samples = 10
 sd = 0.1
 
 abclib.init_rand()
 simu = abclib.MA2()
-observed = simu.run(params_true, params_const, n_obs)
+observed = simu(params_true, params_const, n_obs)
 print "Range of observed data: {:.3f} .. {:.3f}, mean: {:.3f}".format(np.array(observed).min(), np.array(observed).max(), np.array(observed).mean())
 
 distribs = [abclib.Normal(), abclib.Normal()]
-# distance = abclib.Distance_L2()
-# sumstats = [abclib.SS_Autocov(1), abclib.SS_Autocov(2)]
+distance = abclib.Distance_L2()
+sumstats = [abclib.SS_Autocov(1), abclib.SS_Autocov(2)]
 # distance = abclib.Distance_INT_PER(observed)
-distance = abclib.Distance_DTW()
-sumstats = []
+# distance = abclib.Distance_DTW()
+# sumstats = []
 
 params_guess = abclib.abc_reject(simu, params_const, observed, distance, sumstats, distribs, 2, epsilon, params_guess, sd * 3.)
 params_guess = np.array(params_guess[1, :])

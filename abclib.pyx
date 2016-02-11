@@ -140,7 +140,8 @@ cpdef double[:,:] abc_mcmc(
                            double epsilon,
                            double[:] init_guess,
                            double sd,
-                           bool symmetric_proposal = True
+                           bool symmetric_proposal = True,
+                           int print_iter = 10000
                            ):
     """
     Likelihood-free MCMC sampler.
@@ -156,6 +157,7 @@ cpdef double[:,:] abc_mcmc(
     - init_guess: guess
     - sd: standard deviation of the kernel
     - symmetric_proposal: whether the kernel is symmetric
+    - print_iter: report progress every i iterations
     """
     cdef int n_params = len(distribs)
     cdef int n_simu = observed.shape[0]
@@ -208,6 +210,10 @@ cpdef double[:,:] abc_mcmc(
             acc_counter += 1
         else:
             result[ii, :] = result[ii-1, :]
+
+        if (ii % print_iter) == 0:
+            print "{} iterations done, {} accepted so far ({:.3}%)".format(ii, acc_counter,
+                  100. * acc_counter / n_output)
 
     print "ABC-MCMC accepted {:.3f}% of proposals".format(100. * acc_counter / n_output)
 

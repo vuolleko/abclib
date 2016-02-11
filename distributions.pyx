@@ -69,8 +69,10 @@ cdef class Poisson(Distribution):
         cdef int factorial = 1
         cdef int ii
         cdef int kk = int(x)
+        cdef double powered = loc
 
         for ii in range(2, kk+1):
             factorial *= ii
+            powered *= powered
 
-        return pow(loc, kk) / factorial * exp(-loc)
+        return powered / factorial * exp(-loc)

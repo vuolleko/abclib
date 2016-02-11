@@ -117,12 +117,12 @@ cpdef double[:,:] abc_reject(
                 sim_ss[:] = simulated
 
             acc_counter += 1
-            if (distance(obs_ss, sim_ss) < epsilon):
+            if (distance.get(obs_ss, sim_ss) < epsilon):
                 break
 
         result[ii, :] = params_prop
 
-    print "ABC-Reject accepted {:.3f}% of {} proposals".format(100. * n_output / acc_counter, acc_counter)
+    print "ABC-Reject accepted {:.3f}% of {} proposals".format(100. * (n_output-1) / acc_counter, acc_counter)
 
     return result
 
@@ -198,7 +198,7 @@ cpdef double[:,:] abc_mcmc(
                            / distribs[jj].pdf(params_prop[jj], result[ii-1, jj], sd) )
             accept_MH = accprob >= runif()
 
-        if (accept_MH and distance(obs_ss, sim_ss) < epsilon):
+        if (accept_MH and distance.get(obs_ss, sim_ss) < epsilon):
             result[ii, :] = params_prop
             acc_counter += 1
         else:

@@ -104,29 +104,13 @@ cdef nearest_neighbor(double[:,:] train, int[:] labels, double[:,:] test, int[:]
     """
     cdef int n_train = train.shape[0]
     cdef int n_test = test.shape[0]
-    cdef int n_features = train.shape[1]
-    cdef int ii, jj, kk
+    cdef int ii, jj
     cdef double dist_min, dist
-    cdef double[:] test1
-    cdef double[:] train1
-
-    if n_features > 1:
-        test1 = np.empty(n_features)
-        train1 = np.empty(n_features)
 
     for ii in range(n_test):
         dist_min = INFINITY
         for jj in range(n_train):
-
-            if n_features == 1:  # use L2
-                dist = test[ii, 0]*test[ii, 0] - train[ii, 0]*train[ii, 0]
-
-            else:
-                for kk in range(n_features):
-                    test1[kk] = test[ii, kk]
-                    train1[kk] = train[ii, kk]
-
-                dist = distance.get( test1, train1 )
+            dist = distance.get( test[ii, :], train[jj, :] )
 
             if dist < dist_min:
                 dist_min = dist
@@ -148,9 +132,9 @@ cdef class Features(object):
         pass
 
     def __call__(Features self, double[:] simulated):
-        self.get(simulated)
+        self.set(simulated)
 
-    cdef void set(Features self, double[:] data) nogil:
+    cdef void set(Features self, double[:] simulated) nogil:
         pass
 
     cdef double[:,:] get_view(Features self):
@@ -179,4 +163,30 @@ cdef class Feature_pairs(Features):
         for ii in range(self.nn):
             self.data_features[ii+self.nn, 0] = simulated[ii]
             self.data_features[ii+self.nn, 1] = simulated[ii+1]
+
+
+cdef class Feature_triplets(Features):
+    """
+    y_i = ( x_i, x_{i+1}, x_{i+2} )
+    """
+    def __cinit__(Feature_triplets self, double[:] observed):
+        self.n_features = 3
+        self.nn = observed.shape[0] - 2  # no pairs for the last items
+        self.data_features = np.empty((self.nn * 2, self.n_features))
+        cdef int ii
+
+        # assign observed data to the beginning of the feature matrix
+        for ii in range(self.nn):
+            self.data_features[ii, 0] = observed[ii]
+            self.data_features[ii, 1] = observed[ii+1]
+            self.data_features[ii, 2] = observed[ii+2]
+
+    cdef void set(Feature_triplets self, double[:] simulated) nogil:
+        cdef int ii
+
+        # assign simulated data to the end of the feature matrix
+        for ii in range(self.nn):
+            self.data_features[ii+self.nn, 0] = simulated[ii]
+            self.data_features[ii+self.nn, 1] = simulated[ii+1]
+            self.data_features[ii+self.nn, 2] = simulated[ii+2]
 

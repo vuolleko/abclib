@@ -110,7 +110,7 @@ cpdef double[:,:] abc_reject(
             for jj in range(n_params):
                 params_prop[jj] = (<Distribution>distribs[jj]).rvs(result[ii-1, jj], sd)
 
-            simulated = simu(params_prop, fixed_params, n_simu)
+            simulated = simu.run(params_prop, fixed_params, n_simu)
 
             if n_sumstats > 0:
                 for kk in range(n_sumstats):
@@ -188,7 +188,7 @@ cpdef double[:,:] abc_mcmc(
         for jj in range(n_params):
             params_prop[jj] = (<Distribution>distribs[jj]).rvs(result[ii-1, jj], sd)
 
-        simulated = simu(params_prop, fixed_params, n_simu)
+        simulated = simu.run(params_prop, fixed_params, n_simu)
 
         if n_sumstats > 0:
             for kk in range(n_sumstats):
@@ -213,7 +213,7 @@ cpdef double[:,:] abc_mcmc(
 
         if (ii % print_iter) == 0:
             print "{} iterations done, {} accepted so far ({:.3}%)".format(ii, acc_counter,
-                  100. * acc_counter / n_output)
+                  100. * acc_counter / ii)
 
     print "ABC-MCMC accepted {:.3f}% of proposals".format(100. * acc_counter / n_output)
 

@@ -17,7 +17,7 @@ cdef class Gauss(Simulator):
     Gaussian simulator.
     """
     cdef double[:] run(self, double[:] params, double[:] fixed_params,
-                        int n_simu):
+                       int n_simu):
         cdef double[:] result = np.empty(n_simu)
         cdef int ii
         cdef Normal norm = Normal().__new__(Normal)
@@ -33,7 +33,7 @@ cdef class MA1(Simulator):
     MA(1) simulator.
     """
     cdef double[:] run(self, double[:] params, double[:] fixed_params,
-                        int n_simu):
+                       int n_simu):
         cdef double[:] iids = np.empty(n_simu+1)
         cdef double[:] result = np.empty(n_simu)
         cdef int ii
@@ -53,7 +53,7 @@ cdef class MA2(Simulator):
     MA(2) simulator.
     """
     cdef double[:] run(self, double[:] params, double[:] fixed_params,
-                        int n_simu):
+                       int n_simu):
         cdef double[:] iids = np.empty(n_simu+2)
         cdef double[:] result = np.empty(n_simu)
         cdef int ii
@@ -73,26 +73,18 @@ cdef class Ricker(Simulator):
     Ricker, W. E. (1954) Stock and Recruitment Journal of the Fisheries
     Research Board of Canada, 11(5): 559-623.
     """
-    cdef double capacity
-
-    def __cinit__(self, double capacity=1.):
-        self.capacity = capacity
-
     cdef double[:] run(self, double[:] params, double[:] fixed_params,
-                        int n_simu):
+                       int n_simu):
         """
         - params[0]: rate
         """
         cdef double[:] stock = np.empty(n_simu)
         cdef int ii
-        cdef Poisson pois = Poisson().__new__(Poisson)
 
         stock[0] = 1e-6
         for ii in range(1, n_simu):
-            stock[ii] = stock[ii-1] * exp(params[0] * (1. - stock[ii-1] / self.capacity))
-
-        for ii in range(0, n_simu):
-            stock[ii] = pois.rvs(stock[ii] * self.scaling)
+            # stock[ii] = stock[ii-1] * exp(params[0] * (1. - stock[ii-1] / self.capacity))
+            stock[ii] = params[0] * stock[ii-1] * exp( -stock[ii-1] )
 
         return stock
 
@@ -104,14 +96,16 @@ cdef class StochasticRicker(Simulator):
     cdef double sd
     cdef double scaling
 
-    def __cinit__(self, double sd=1., double scaling=1.):
-        self.sd = sd
-        self.scaling = scaling
+    # def __cinit__(self, double sd=1., double scaling=1.):
+    #     self.sd = sd
+    #     self.scaling = scaling
 
     cdef double[:] run(self, double[:] params, double[:] fixed_params,
-                        int n_simu):
+                       int n_simu):
         """
         - params[0]: rate
+        - params[1]: standard deviation of innovations
+        - params[2]: scaling of the expected value from Poisson
         """
         cdef double[:] stock = np.empty(n_simu)
         cdef int ii
@@ -120,11 +114,10 @@ cdef class StochasticRicker(Simulator):
 
         stock[0] = 1e-6
         for ii in range(1, n_simu):
-            stock[ii] = stock[ii-1] * exp(params[0] - stock[ii-1] +
-                                          norm.rvs(0., self.sd))
+            stock[ii] = params[0] * stock[ii-1] * exp(-stock[ii-1] + norm.rvs(0., params[1]))
 
         # the observed stock is Poisson distributed
         for ii in range(n_simu):
-            stock[ii] = pois.rvs(stock[ii] * self.scaling)
+            stock[ii] = pois.rvs(stock[ii] * params[2])
 
         return stock

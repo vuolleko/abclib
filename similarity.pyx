@@ -189,6 +189,7 @@ cdef class Distance_DTW_Keogh(Distance_DTW):
 
 # ****************** Summary statistics ***************
 
+
 cdef class SummaryStat:
     """
     A dummy parent class for summary statistics functions.
@@ -238,6 +239,38 @@ cdef class SS_Var(SummaryStat):
             result += (data[ii] - mean)**2.
 
         return result / nn
+
+cdef class SS_MeanRatio2(SummaryStat):
+    """
+    Mean of x_i / x_{i-1}
+    """
+    cdef double get(SS_MeanRatio2 self, double[:] data):
+        cdef int nn = data.shape[0]
+        cdef double[:] ratio = np.empty(nn-1)
+        cdef int ii
+
+        for ii in range(1, nn):
+            if data[ii-1] > 0.:
+                ratio[ii] = data[ii] / data[ii-1]
+
+        return sum_of(ratio) / (nn-1)
+
+cdef class SS_MedianRatio2(SummaryStat):
+    """
+    Median of x_i / x_{i-1}
+    """
+    cdef double get(SS_MedianRatio2 self, double[:] data):
+        cdef int nn = data.shape[0]
+        cdef double[:] ratio = np.empty(nn-1)
+        cdef int ii
+
+        for ii in range(1, nn):
+            if data[ii-1] > 0.:
+                ratio[ii] = data[ii] / data[ii-1]
+            else:
+                ratio[ii] = data[ii] * 1e99
+
+        return np.median(ratio)
 
 
 # ****************** Normalizing function ***************

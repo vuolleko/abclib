@@ -53,6 +53,32 @@ cdef class Distance_L2_Nrlz(Distance):
 
         return result
 
+cdef class Distance_Corr(Distance):
+    """
+    Distance based on covariance.
+    """
+    cdef double mean1, stddev1
+    def __cinit__(Distance_Corr self, double[:] data):
+        self.mean1 = sum_of(data) / data.shape[0]
+        self.stddev1 = sqrt( var_of(data) )
+
+    cdef double get(Distance_Corr self, double[:] data1, double[:] data2):
+        cdef int nn = data1.shape[0]
+        cdef double mean2 = sum_of(data2) / nn
+        cdef double stddev2 = sqrt( var_of(data2) )
+        cdef double corr = 0.
+        cdef double result
+        cdef int ii
+
+        for ii in range(nn):
+            corr += (data1[ii] - self.mean1) * (data2[ii] - mean2)
+
+        corr /= (self.stddev1 * stddev2)
+
+        result = (1. - corr) / (1. + corr)
+
+        return result
+
 cdef class Distance_INT_PER(Distance):
     """
     Distance based on integrated periodogram.
@@ -230,15 +256,7 @@ cdef class SS_Var(SummaryStat):
     Variance of a vector.
     """
     cdef double get(SS_Var self, double[:] data):
-        cdef int nn = data.shape[0]
-        cdef double mean = sum_of(data) / nn
-
-        cdef int ii
-        cdef double result = 0.
-        for ii in range(nn):
-            result += (data[ii] - mean)**2.
-
-        return result / nn
+        return var_of(data)
 
 cdef class SS_MeanRatio2(SummaryStat):
     """
@@ -276,31 +294,19 @@ cdef class SS_MedianRatio2(SummaryStat):
 # ****************** Normalizing function ***************
 
 @cython.profile(False)
-cdef inline void normalize(double[:] vector) nogil:
+cdef inline void normalize(double[:] data) nogil:
     """
     Normalize vector inplace.
     D -> (D - mean) / variance
     """
-    cdef double mean = 0.
-    cdef double var = 0.
+    cdef int nn = data.shape[0]
+    cdef double mean = sum_of(data) / nn
+    cdef double var = var_of(data)
     cdef int ii
 
-    cdef int nn = vector.shape[0]
-
     for ii in range(nn):
-        mean += vector[ii]
-
-    mean /= nn
-
-    for ii in range(nn):
-        vector[ii] -= mean
-        var += vector[ii] * vector[ii]
-
-    var /= nn
-    # var /= (nn-1)
-
-    for ii in range(nn):
-        vector[ii] /= var
+        data[ii] -= mean
+        data[ii] /= var
 
 
 # ****************** Helper functions ***************
@@ -313,3 +319,17 @@ cdef inline double sum_of(double[:] data) nogil:
         sum0 += data[ii]
 
     return sum0
+
+
+cdef inline double var_of(double[:] data) nogil:
+    cdef int ii
+    cdef int nn = data.shape[0]
+    cdef double var = 0.
+    cdef double mean = sum_of(data) / nn
+    cdef double temp
+
+    for ii in range(nn):
+        temp = data[ii] - mean
+        var += temp * temp
+
+    return var / nn

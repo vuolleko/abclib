@@ -7,10 +7,10 @@ n_obs = 100
 params_true = np.array([1.4, 0.8])
 params_guess = np.array([2., 1.])
 params_const = np.array([])
-n_sets = 1e6
-epsilon = 50.
+n_sets = 1e4
+epsilon = 500.
 # n_samples = 10
-sd = 0.1
+sd = np.ones(2) * 0.1
 
 abclib.init_rand()
 simu = abclib.MA2()
@@ -24,13 +24,19 @@ sumstats = [abclib.SS_Autocov(1), abclib.SS_Autocov(2)]
 # distance = abclib.Distance_DTW()
 # sumstats = []
 
-params_guess = abclib.abc_reject(simu, params_const, observed, distance, sumstats, distribs, 2, epsilon, params_guess, sd * 3.)
-params_guess = np.array(params_guess[1, :])
+# ******* ABC-MCMC ********
+# params_guess = abclib.abc_reject(simu, params_const, observed, distance, sumstats, distribs, 2, epsilon, params_guess, sd * 3.)
+# params_guess = np.array(params_guess[1, :])
 
-print "Trying with initial guess: {}".format( params_guess )
-params = abclib.abc_mcmc(simu, params_const, observed, distance, sumstats, distribs, n_sets, epsilon, params_guess, sd)
+# print "Trying with initial guess: {}".format( params_guess )
+# params = abclib.abc_mcmc(simu, params_const, observed, distance, sumstats, distribs, n_sets, epsilon, params_guess, sd)
 
+# ******* ABC-sample
 # params = abclib.sample_abc(simu, params_const, observed, distance, sumstats, distribs, n_sets, epsilon, n_samples, params_guess[1, :], sd)
+
+# ******* ABC-SEQ-MC ********
+params = abclib.abc_seq_mc(simu, params_const, observed, distance, sumstats, distribs, n_sets, epsilon, params_guess, sd, 5)
+
 
 print "Posterior means: {:.3f}, {:.3f}".format(np.mean(params[:, 0]), np.mean(params[:, 1]))
 

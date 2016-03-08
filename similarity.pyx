@@ -58,14 +58,14 @@ cdef class Distance_Corr(Distance):
     Distance based on covariance.
     """
     cdef double mean1, stddev1
-    def __cinit__(Distance_Corr self, double[:] data):
-        self.mean1 = sum_of(data) / data.shape[0]
-        self.stddev1 = sqrt( var_of(data) )
+    def __cinit__(Distance_Corr self, double[:] data1):
+        self.mean1 = sum_of(data1) / data1.shape[0]
+        self.stddev1 = sqrt( var_of(data1, self.mean1) )
 
     cdef double get(Distance_Corr self, double[:] data1, double[:] data2):
         cdef int nn = data1.shape[0]
         cdef double mean2 = sum_of(data2) / nn
-        cdef double stddev2 = sqrt( var_of(data2) )
+        cdef double stddev2 = sqrt( var_of(data2, mean2) )
         cdef double corr = 0.
         cdef double result
         cdef int ii
@@ -76,6 +76,7 @@ cdef class Distance_Corr(Distance):
         corr /= (self.stddev1 * stddev2)
 
         result = (1. - corr) / (1. + corr)
+        result *= result
 
         return result
 
@@ -256,7 +257,7 @@ cdef class SS_Var(SummaryStat):
     Variance of a vector.
     """
     cdef double get(SS_Var self, double[:] data):
-        return var_of(data)
+        return var_of(data, sum_of(data) / data.shape[0])
 
 cdef class SS_MeanRatio2(SummaryStat):
     """
@@ -301,35 +302,10 @@ cdef inline void normalize(double[:] data) nogil:
     """
     cdef int nn = data.shape[0]
     cdef double mean = sum_of(data) / nn
-    cdef double var = var_of(data)
+    cdef double var = var_of(data, mean)
     cdef int ii
 
     for ii in range(nn):
         data[ii] -= mean
         data[ii] /= var
 
-
-# ****************** Helper functions ***************
-
-cdef inline double sum_of(double[:] data) nogil:
-    cdef int ii
-    cdef double sum0 = 0.
-
-    for ii in range(data.shape[0]):
-        sum0 += data[ii]
-
-    return sum0
-
-
-cdef inline double var_of(double[:] data) nogil:
-    cdef int ii
-    cdef int nn = data.shape[0]
-    cdef double var = 0.
-    cdef double mean = sum_of(data) / nn
-    cdef double temp
-
-    for ii in range(nn):
-        temp = data[ii] - mean
-        var += temp * temp
-
-    return var / nn

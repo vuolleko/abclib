@@ -48,6 +48,7 @@ cdef inline double runif() nogil:
     return 1. * rand() / RAND_MAX
 
 
+include "auxiliary.pyx"
 include "distributions.pyx"
 include "similarity.pyx"
 include "simulators.pyx"
@@ -55,6 +56,8 @@ include "classification.pyx"
 
 
 # ************* Approximate Bayesian computation ************
+include "seq_mc.pyx"
+
 
 cpdef double[:,:] abc_reject(
                              Simulator simu,
@@ -66,7 +69,7 @@ cpdef double[:,:] abc_reject(
                              int n_output,
                              double epsilon,
                              double[:] init_guess,
-                             double sd
+                             double[:] sd
                              ):
     """
     Likelihood-free recection sampler.
@@ -80,7 +83,7 @@ cpdef double[:,:] abc_reject(
     - n_output: number of output samples
     - epsilon: tolerance in acceptance criterion
     - init_guess: guess
-    - sd: standard deviation of the kernel
+    - sd: standard deviations of the kernel
     """
     cdef int n_params = len(distribs)
     cdef int n_simu = observed.shape[0]
@@ -108,7 +111,7 @@ cpdef double[:,:] abc_reject(
     for ii in range(1, n_output):
         while True:
             for jj in range(n_params):
-                params_prop[jj] = (<Distribution>distribs[jj]).rvs(result[ii-1, jj], sd)
+                params_prop[jj] = (<Distribution>distribs[jj]).rvs(result[ii-1, jj], sd[jj])
 
             simulated = simu.run(params_prop, fixed_params, n_simu)
 
@@ -139,7 +142,7 @@ cpdef double[:,:] abc_mcmc(
                            int n_output,
                            double epsilon,
                            double[:] init_guess,
-                           double sd,
+                           double[:] sd,
                            bool symmetric_proposal = True,
                            int print_iter = 10000
                            ):
@@ -155,13 +158,13 @@ cpdef double[:,:] abc_mcmc(
     - n_output: number of output samples
     - epsilon: tolerance in acceptance criterion
     - init_guess: guess
-    - sd: standard deviation of the kernel
+    - sd: standard deviations of the kernel
     - symmetric_proposal: whether the kernel is symmetric
     - print_iter: report progress every i iterations
     """
     cdef int n_params = len(distribs)
     cdef int n_simu = observed.shape[0]
-    cdef int ii, jj
+    cdef int ii, jj, kk
     cdef double[:] params_prop = np.empty(n_params)
     cdef double[:] simulated = np.empty_like(observed)
 
@@ -186,7 +189,7 @@ cpdef double[:,:] abc_mcmc(
 
     for ii in range(1, n_output):
         for jj in range(n_params):
-            params_prop[jj] = (<Distribution>distribs[jj]).rvs(result[ii-1, jj], sd)
+            params_prop[jj] = (<Distribution>distribs[jj]).rvs(result[ii-1, jj], sd[jj])
 
         simulated = simu.run(params_prop, fixed_params, n_simu)
 
@@ -200,9 +203,9 @@ cpdef double[:,:] abc_mcmc(
             accprob = 1.
             for jj in range(n_params):
                 accprob *= ( (<Distribution>distribs[jj]).pdf( result[ii-1, jj],
-                             params_prop[jj], sd )
+                             params_prop[jj], sd[jj] )
                            / (<Distribution>distribs[jj]).pdf( params_prop[jj],
-                             result[ii-1, jj], sd ) )
+                             result[ii-1, jj], sd[jj] ) )
             accept_MH = accprob >= runif()
 
         if (accept_MH and distance.get(obs_ss, sim_ss) < epsilon):

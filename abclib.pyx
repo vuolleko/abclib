@@ -59,20 +59,21 @@ include "classification.pyx"
 include "seq_mc.pyx"
 
 
-cpdef double[:,:] abc_reject(
-                             Simulator simu,
-                             double[:] fixed_params,
-                             double[:] observed,
-                             Distance distance,
-                             list sumstats,
-                             list distribs,
-                             int n_output,
-                             double epsilon,
-                             double[:] init_guess,
-                             double[:] sd
-                             ):
+cpdef tuple abc_reject(
+                       Simulator simu,
+                       double[:] fixed_params,
+                       double[:] observed,
+                       Distance distance,
+                       list sumstats,
+                       list distribs,
+                       int n_output,
+                       double[:] init_guess,
+                       double[:] sd,
+                       double p_quantile = 0.1,
+                       int print_iter = 100000
+                       ):
     """
-    Likelihood-free recection sampler.
+    Likelihood-free rejection sampler with automatic selection of acceptance threshold.
     Inputs:
     - simu: an instance of a Simulator class
     - fixed_params: constant parameter for the simulator
@@ -82,8 +83,10 @@ cpdef double[:,:] abc_reject(
     - distribs: list of instances of distribution class for parameters
     - n_output: number of output samples
     - epsilon: tolerance in acceptance criterion
-    - init_guess: guess
+    - init_guess: the expected value of prior distributions
     - sd: standard deviations of the kernel
+    - p_quantile: criterion for automatic acceptance threshold selection
+    - print_iter: report progress every i iterations
     """
     cdef int n_params = len(distribs)
     cdef int n_simu = observed.shape[0]
@@ -104,32 +107,58 @@ cpdef double[:,:] abc_reject(
         sim_ss = np.empty(n_simu)
 
     cdef double[:,:] result = np.empty((n_output, n_params))
-    result[0, :] = init_guess
 
-    cdef int acc_counter = 0
+    # find a suitable acceptance threshold epsilon
+    cdef double[:] distances = np.empty(n_output)
 
-    for ii in range(1, n_output):
-        while True:
-            for jj in range(n_params):
-                params_prop[jj] = (<Distribution>distribs[jj]).rvs(result[ii-1, jj], sd[jj])
+    for ii in range(n_output):
+        for jj in range(n_params):
+            params_prop[jj] = (<Distribution>distribs[jj]).rvs(init_guess[jj], sd[jj])
 
-            simulated = simu.run(params_prop, fixed_params, n_simu)
+        simulated = simu.run(params_prop, fixed_params, n_simu)
 
-            if n_sumstats > 0:
-                for kk in range(n_sumstats):
-                    sim_ss[kk] = (<SummaryStat> sumstats[kk]).get(simulated)
-            else:
-                sim_ss[:] = simulated
-
-            acc_counter += 1
-            if (distance.get(obs_ss, sim_ss) < epsilon):
-                break
+        if n_sumstats > 0:
+            for kk in range(n_sumstats):
+                sim_ss[kk] = (<SummaryStat> sumstats[kk]).get(simulated)
+        else:
+            sim_ss[:] = simulated
 
         result[ii, :] = params_prop
+        distances[ii] = distance.get(obs_ss, sim_ss)
 
-    print "ABC-Reject accepted {:.3f}% of {} proposals".format(100. * (n_output-1) / acc_counter, acc_counter)
+    cdef double epsilon = quantile(distances.copy(), p_quantile)
 
-    return result
+    cdef int acc_counter = n_output - 1
+
+    # use this epsilon to find rest of the samples
+    for ii in range(n_output):
+        if distances[ii] >= epsilon:  # otherwise already a good sample
+
+            while True:
+                for jj in range(n_params):
+                    params_prop[jj] = (<Distribution>distribs[jj]).rvs(init_guess[jj], sd[jj])
+
+                simulated = simu.run(params_prop, fixed_params, n_simu)
+
+                if n_sumstats > 0:
+                    for kk in range(n_sumstats):
+                        sim_ss[kk] = (<SummaryStat> sumstats[kk]).get(simulated)
+                else:
+                    sim_ss[:] = simulated
+
+                acc_counter += 1
+                distances[ii] = distance.get(obs_ss, sim_ss)
+                if (distances[ii] < epsilon):
+                    break
+
+                if (acc_counter % print_iter) == 0:
+                    print "{} iterations done".format(acc_counter)
+
+            result[ii, :] = params_prop
+
+    print "ABC-Reject accepted {:.3f}% of {} proposals with epsilon = {:.3g}".format(100. * n_output / acc_counter, acc_counter, epsilon)
+
+    return result, epsilon, distances
 
 
 cpdef double[:,:] abc_mcmc(

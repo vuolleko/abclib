@@ -13,6 +13,19 @@ cdef inline double sum_of(double[:] data) nogil:
     return sum0
 
 
+cdef inline double weighted_mean_of(double[:] data, double[:] weights) nogil:
+    """
+    Weighted mean of data.
+    """
+    cdef int ii
+    cdef double sum0 = 0.
+
+    for ii in range(data.shape[0]):
+        sum0 += weights[ii] * data[ii]
+
+    return sum0
+
+
 cdef inline double var_of(double[:] data, double mean) nogil:
     """
     Variance of data.
@@ -29,26 +42,44 @@ cdef inline double var_of(double[:] data, double mean) nogil:
     return var / nn
 
 
-cpdef inline double quantile(double[:] data, double prob):
+cdef inline double weighted_var_of(double[:] data, double[:] weights) nogil:
     """
-    Returns the prob-quantile of a *sorted* array data.
+    Weighted variance of data. Assumes normalized weights.
     """
+    cdef int ii
+    cdef double var = 0.
+    cdef double temp
+    cdef double weighted_mean = weighted_mean_of(data, weights)
+
+    for ii in range(data.shape[0]):
+        temp = data[ii] - weighted_mean
+        var += weights[ii] * temp * temp
+
+    return var
+
+
+cdef inline double quantile(double[:] data, double prob):
+    """
+    Returns the prob-quantile of data. Sorts data in-place!
+    """
+    sort(data)
+
     cdef int ii = 1
-    cdef int nn = data.shape[0]
-    prob *= nn - 1.
+    prob *= data.shape[0] - 1.
 
     while ii < prob:
         ii += 1
+    ii -= 1
 
-    return data[ii-1] + (data[ii] - data[ii-1]) * (prob - ii + 1.)
+    return data[ii] + (data[ii+1] - data[ii]) * (prob - ii)
 
 
-cdef inline void sort(double[:] data, double[:] data2) nogil:
+cdef inline void sort(double[:] data):
     """
-    Top-down merge sort. Sorts the data in ascending order (data2 needed for working without GIL).
+    Top-down merge sort. Sorts the data in ascending order and in-place.
     https://en.wikipedia.org/wiki/Merge_sort
     """
-    _tdms_split_merge(data, data2, 0, data.shape[0])
+    _tdms_split_merge(data, np.empty_like(data), 0, data.shape[0])
 
 
 # Split-merge part of merge sort.

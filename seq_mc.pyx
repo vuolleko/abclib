@@ -7,8 +7,8 @@ cpdef double[:,:] abc_seq_mc(
                              list sumstats,
                              double[:] schedule,
                              int n_populations,
-                             double p_quantile = 0.1,
-                             int print_iter = 1
+                             double p_quantile = 0.5,
+                             int print_iter = 100000
                              ):
     """
     Likelihood-free sequential MC sampler.
@@ -63,11 +63,11 @@ cpdef double[:,:] abc_seq_mc(
         result_old = result.copy()
 
         # get new epsilon
-        # epsilon = fmax( quantile(distances, p_quantile), schedule[tt] )
-        # epsilon /= 2.
+        epsilon = fmax( quantile(distances, p_quantile), schedule[tt] )
 
         # cumulative sum of weights
         weights_sum = sum_of(weights)  # for normalization
+        weights[0] /= weights_sum
         weights_cumsum[0] = weights[0]
         for jj in range(1, n_output):
             weights[jj] /= weights_sum
@@ -77,7 +77,7 @@ cpdef double[:,:] abc_seq_mc(
         for jj in range(n_params):
             sd[jj] = 2. * sqrt( weighted_var_of( result[:, jj], weights ) )
 
-        print np.asarray(sd)
+        print "Using threshold {} and standard deviations {}".format(epsilon, np.asarray(sd))
 
         for ii in range(1, n_output):
 
@@ -108,6 +108,9 @@ cpdef double[:,:] abc_seq_mc(
                 if (distances[ii] < epsilon):
                     break
 
+                if (counter_pop % print_iter) == 0:
+                    print "{} iterations done".format(counter_pop)
+
             # set new weight, unnormalized
             weights[ii] = 1.
             weights_sum = 0.
@@ -123,7 +126,7 @@ cpdef double[:,:] abc_seq_mc(
 
             weights[ii] /= weights_sum
 
-        print "{} iterations over populations done, {:.3f}% accepted".format(tt, 100. * n_output / counter_pop)
+        print "{} iterations over populations done, {:.3f}% accepted".format(tt+1, 100. * n_output / counter_pop)
 
     print "ABC-SEQ-MC accepted altogether {:.3f}% of proposals".format(100. * n_output / counter)
 

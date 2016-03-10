@@ -35,7 +35,7 @@ sumstats = [abclib.SS_Autocov(1), abclib.SS_Autocov(2)]
 
 # ******* ABC-SEQ-MC ********
 schedule = np.zeros(5)
-params = abclib.abc_seq_mc(n_output, simu, observed, priors, distance, sumstats, schedule, 5)
+params = abclib.abc_seq_mc(n_output, simu, observed, priors, distance, sumstats, schedule, 5, p_quantile=0.5)
 
 
 print "Posterior means: {:.3f}, {:.3f}".format(np.mean(params[n_output/2:, 0]), np.mean(params[n_output/2:, 1]))

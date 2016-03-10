@@ -5,37 +5,55 @@ cdef class Distribution:
     """
     A dummy parent class for probability distributions.
     """
-    cdef double rvs(self, double loc=0, double scale=1) nogil:
+    cdef double loc, scale
+    def __cinit__(self, double loc=0., double scale=1.):
+        self.loc = loc
+        self.scale = scale
+
+    cdef double rvs(self, double loc, double scale) nogil:
         pass
 
-    cdef double pdf(self, double x, double loc=0, double scale=1) nogil:
+    cdef double rvs0(self) nogil:
+        return self.rvs(self.loc, self.scale)
+
+    cdef double rvs1(self, double loc) nogil:
+        return self.rvs(loc, self.scale)
+
+    cdef double pdf(self, double x, double loc, double scale) nogil:
         pass
+
+    cdef double pdf0(self, double x) nogil:
+        return self.pdf(x, self.loc, self.scale)
+
+    cdef double pdf1(self, double x, double loc) nogil:
+        return self.pdf(x, loc, self.scale)
 
 
 cdef class Uniform(Distribution):
-    cdef double rvs(self, double loc=0, double scale=1) nogil:
+    cdef double rvs(self, double loc, double scale) nogil:
         """
         Returns x ~ Unif(loc, scale).
         """
         return loc + (scale - loc) * runif()
 
-    cdef double pdf(self, double x, double loc=0, double scale=1) nogil:
+    cdef double pdf(self, double x, double loc, double scale) nogil:
         """
         Returns pdf(x) for x ~ Unif(loc, scale).
         """
+        if (x < loc) or (x > scale):
+            return 0.
         return 1. / (scale - loc)
 
 
 cdef class Normal(Distribution):
-    cdef double rvs(self, double loc=0, double scale=1) nogil:
+    cdef double rvs(self, double loc, double scale) nogil:
         """
-        Returns x ~ N(loc, scale).
+        Returns x ~ N(loc, scale) using Box-Muller transform.
         """
-        # Box-Muller transform
         cdef double n01 = sqrt(-2. * log(runif())) * cos(2. * PI * runif())
         return loc + scale * n01
 
-    cdef double pdf(self, double x, double loc=0, double scale=1) nogil:
+    cdef double pdf(self, double x, double loc, double scale) nogil:
         """
         Returns pdf(x) for x ~ N(loc, scale).
         """
@@ -44,7 +62,7 @@ cdef class Normal(Distribution):
 
 
 cdef class Poisson(Distribution):
-    cdef double rvs(self, double loc=1, double scale=1) nogil:
+    cdef double rvs(self, double loc, double scale) nogil:
         """
         Returns x ~ Poisson(loc).
         The inherited parameter 'scale' is unused.
@@ -61,7 +79,7 @@ cdef class Poisson(Distribution):
 
         return kk - 1
 
-    cdef double pdf(self, double x, double loc=0, double scale=1) nogil:
+    cdef double pdf(self, double x, double loc, double scale) nogil:
         """
         Returns pdf(x) for x ~ Poisson(loc).
         The inherited parameter 'scale' is unused.

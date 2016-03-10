@@ -4,11 +4,10 @@ cdef class Simulator:
     """
     A dummy parent class for simulators.
     """
-    def __call__(self, double[:] params, double[:] fixed_params, int n_simu):
-        return self.run(params, fixed_params, n_simu)
+    def __call__(self, double[:] params, int n_simu):
+        return self.run(params, n_simu)
 
-    cdef double[:] run(self, double[:] params, double[:] fixed_params,
-                        int n_simu):
+    cdef double[:] run(self, double[:] params, int n_simu):
         pass
 
 
@@ -16,14 +15,13 @@ cdef class Gauss(Simulator):
     """
     Gaussian simulator.
     """
-    cdef double[:] run(self, double[:] params, double[:] fixed_params,
-                       int n_simu):
+    cdef double[:] run(self, double[:] params, int n_simu):
         cdef double[:] result = np.empty(n_simu)
         cdef int ii
         cdef Normal norm = Normal().__new__(Normal)
 
         for ii in range(n_simu):
-            result[ii] = params[0] + norm.rvs() * params[1]
+            result[ii] = params[0] + norm.rvs0() * params[1]
 
         return result
 
@@ -32,15 +30,14 @@ cdef class MA1(Simulator):
     """
     MA(1) simulator.
     """
-    cdef double[:] run(self, double[:] params, double[:] fixed_params,
-                       int n_simu):
+    cdef double[:] run(self, double[:] params, int n_simu):
         cdef double[:] iids = np.empty(n_simu+1)
         cdef double[:] result = np.empty(n_simu)
         cdef int ii
         cdef Normal norm = Normal().__new__(Normal)
 
         for ii in range(n_simu+1):
-            iids[ii] = norm.rvs()
+            iids[ii] = norm.rvs0()
 
         for ii in range(n_simu):
             result[ii] = iids[ii+1] + params[0] * iids[ii]
@@ -52,15 +49,14 @@ cdef class MA2(Simulator):
     """
     MA(2) simulator.
     """
-    cdef double[:] run(self, double[:] params, double[:] fixed_params,
-                       int n_simu):
+    cdef double[:] run(self, double[:] params, int n_simu):
         cdef double[:] iids = np.empty(n_simu+2)
         cdef double[:] result = np.empty(n_simu)
         cdef int ii
         cdef Normal norm = Normal().__new__(Normal)
 
         for ii in range(n_simu+2):
-            iids[ii] = norm.rvs()
+            iids[ii] = norm.rvs0()
 
         for ii in range(n_simu):
             result[ii] = iids[ii+2] + params[0] * iids[ii+1] + params[1] * iids[ii]
@@ -73,8 +69,7 @@ cdef class Ricker(Simulator):
     Ricker, W. E. (1954) Stock and Recruitment Journal of the Fisheries
     Research Board of Canada, 11(5): 559-623.
     """
-    cdef double[:] run(self, double[:] params, double[:] fixed_params,
-                       int n_simu):
+    cdef double[:] run(self, double[:] params, int n_simu):
         """
         - params[0]: rate
         """
@@ -100,8 +95,7 @@ cdef class StochasticRicker(Simulator):
     #     self.sd = sd
     #     self.scaling = scaling
 
-    cdef double[:] run(self, double[:] params, double[:] fixed_params,
-                       int n_simu):
+    cdef double[:] run(self, double[:] params, int n_simu):
         """
         - params[0]: rate
         - params[1]: standard deviation of innovations
@@ -118,6 +112,6 @@ cdef class StochasticRicker(Simulator):
 
         # the observed stock is Poisson distributed
         for ii in range(n_simu):
-            stock[ii] = pois.rvs(stock[ii] * params[2])
+            stock[ii] = pois.rvs(stock[ii] * params[2], 1.)
 
         return stock

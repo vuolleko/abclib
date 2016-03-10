@@ -1,13 +1,11 @@
 cpdef double[:,:] abc_seq_mc(
+                             int n_output,
                              Simulator simu,
-                             double[:] fixed_params,
                              double[:] observed,
+                             list priors,
                              Distance distance,
                              list sumstats,
-                             list distribs,
-                             int n_output,
-                             double[:] init_guess,
-                             double[:] sd,
+                             double[:] schedule,
                              int n_populations,
                              double p_quantile = 0.1,
                              int print_iter = 1
@@ -15,23 +13,20 @@ cpdef double[:,:] abc_seq_mc(
     """
     Likelihood-free sequential MC sampler.
     Inputs:
-    - simu: an instance of a Simulator class
-    - fixed_params: constant parameter for the simulator
-    - observed: a vector of observations
-    - distance: instance of distance class
-    - sumstats: list of instances of summary statistics class
-    - distribs: list of instances of distribution class for parameters
     - n_output: number of output samples
-    - init_guess: guess
-    - sd: standard deviations of the kernel
+    - simu: instance of the Simulator class
+    - observed: vector of observations
+    - priors: list of instances of the Distribution class
+    - distance: instance of the Distance class
+    - sumstats: list of instances of the SummaryStat class
+    - schedule: vector of acceptance thresholds (hybrid used)
     - n_populations: number of iterations over the population
-    - p_quantile: criterion for automatic acceptance threshold selection
+    - p_quantile: criterion for automatic acceptance threshold selection (hybrid used)
     - print_iter: report progress every i iterations over populations
     """
-    cdef int n_params = len(distribs)
+    cdef int n_params = len(priors)
     cdef int n_simu = observed.shape[0]
     cdef int ii, jj, kk, tt, sel_ind
-    cdef double[:] params_prop = np.empty(n_params)
     cdef double[:] simulated = np.empty_like(observed)
 
     cdef int n_sumstats = len(sumstats)
@@ -49,30 +44,30 @@ cpdef double[:,:] abc_seq_mc(
     cdef double[:,:] result
     cdef double[:] distances
     cdef double epsilon
-    result, epsilon, distances = abc_reject(simu, fixed_params, observed, distance,
-                                            sumstats, distribs, n_output, init_guess,
-                                            sd, p_quantile=p_quantile)
+    result, epsilon, distances = abc_reject(n_output, simu, observed, priors, distance, sumstats,
+                                            p_quantile=p_quantile)
 
     cdef double[:,:] result_old = np.empty_like(result)
     cdef double[:] weights = np.ones(n_output)
     cdef double[:] weights_cumsum = np.empty_like(weights)
     cdef double weights_sum, weights_sum1
+    cdef double[:] sd = np.empty(n_params)
 
-    cdef int acc_counter = 0
-    cdef int acc_counter_pop
+    cdef int counter = 0
+    cdef int counter_pop
     cdef double randsel
+    cdef Normal normal = Normal().__new__(Normal)  # proposal distribution
 
-    for tt in range(2, n_populations+1):
-        acc_counter_pop = 0
+    for tt in range(n_populations-1):
+        counter_pop = 0
         result_old = result.copy()
 
         # get new epsilon
-        # epsilon = quantile(distances, p_quantile)
+        # epsilon = fmax( quantile(distances, p_quantile), schedule[tt] )
         # epsilon /= 2.
 
         # cumulative sum of weights
         weights_sum = sum_of(weights)  # for normalization
-        print weights_sum
         weights_cumsum[0] = weights[0]
         for jj in range(1, n_output):
             weights[jj] /= weights_sum
@@ -81,8 +76,8 @@ cpdef double[:,:] abc_seq_mc(
         # update variance of proposals
         for jj in range(n_params):
             sd[jj] = 2. * sqrt( weighted_var_of( result[:, jj], weights ) )
-            print sd[jj]
-        print epsilon
+
+        print np.asarray(sd)
 
         for ii in range(1, n_output):
 
@@ -94,10 +89,11 @@ cpdef double[:,:] abc_seq_mc(
                 while (randsel > weights_cumsum[sel_ind]):
                     sel_ind += 1
 
+                # propose new parameter set near the sampled one
                 for jj in range(n_params):
-                    params_prop[jj] = (<Distribution>distribs[jj]).rvs(result_old[sel_ind, jj], sd[jj])
+                    result[ii, jj] = normal.rvs( result_old[sel_ind, jj], sd[jj] )
 
-                simulated = simu.run(params_prop, fixed_params, n_simu)
+                simulated = simu.run(result[ii, :], n_simu)
 
                 if n_sumstats > 0:
                     for kk in range(n_sumstats):
@@ -105,13 +101,12 @@ cpdef double[:,:] abc_seq_mc(
                 else:
                     sim_ss[:] = simulated
 
-                acc_counter += 1
-                acc_counter_pop += 1
+                counter += 1
+                counter_pop += 1
+
                 distances[ii] = distance.get(obs_ss, sim_ss)
                 if (distances[ii] < epsilon):
                     break
-
-            result[ii, :] = params_prop
 
             # set new weight, unnormalized
             weights[ii] = 1.
@@ -120,16 +115,16 @@ cpdef double[:,:] abc_seq_mc(
             for kk in range(n_output):
                 weights_sum1 = weights[kk]
                 for jj in range(n_params):
-                    weights_sum1 *= (<Distribution>distribs[jj]).pdf(result[ii, jj], result_old[kk, jj], sd[jj])
+                    weights_sum1 *= normal.pdf( result[ii, jj], result_old[kk, jj], sd[jj] )
                 weights_sum += weights_sum1
 
             for jj in range(n_params):
-                weights[ii] *= (<Distribution>distribs[jj]).pdf(result[ii, jj], init_guess[jj], sd[jj])
+                weights[ii] *= (<Distribution> priors[jj]).pdf0(result[ii, jj])
 
             weights[ii] /= weights_sum
 
-        print "{} iterations over populations done, {:.3f}% accepted".format(tt, 100. * n_output / acc_counter_pop)
+        print "{} iterations over populations done, {:.3f}% accepted".format(tt, 100. * n_output / counter_pop)
 
-    print "ABC-SEQ-MC accepted altogether {:.3f}% of proposals".format(100. * n_output / acc_counter)
+    print "ABC-SEQ-MC accepted altogether {:.3f}% of proposals".format(100. * n_output / counter)
 
     return result

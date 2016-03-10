@@ -60,35 +60,28 @@ include "seq_mc.pyx"
 
 
 cpdef tuple abc_reject(
+                       int n_output,
                        Simulator simu,
-                       double[:] fixed_params,
                        double[:] observed,
+                       list priors,
                        Distance distance,
                        list sumstats,
-                       list distribs,
-                       int n_output,
-                       double[:] init_guess,
-                       double[:] sd,
                        double p_quantile = 0.1,
                        int print_iter = 100000
                        ):
     """
     Likelihood-free rejection sampler with automatic selection of acceptance threshold.
     Inputs:
-    - simu: an instance of a Simulator class
-    - fixed_params: constant parameter for the simulator
-    - observed: a vector of observations
-    - distance: instance of distance class
-    - sumstats: list of instances of summary statistics class
-    - distribs: list of instances of distribution class for parameters
     - n_output: number of output samples
-    - epsilon: tolerance in acceptance criterion
-    - init_guess: the expected value of prior distributions
-    - sd: standard deviations of the kernel
+    - simu: instance of the Simulator class
+    - observed: vector of observations
+    - priors: list of instances of the Distribution class
+    - distance: instance of the Distance class
+    - sumstats: list of instances of the SummaryStat class
     - p_quantile: criterion for automatic acceptance threshold selection
     - print_iter: report progress every i iterations
     """
-    cdef int n_params = len(distribs)
+    cdef int n_params = len(priors)
     cdef int n_simu = observed.shape[0]
     cdef int ii, jj, kk
     cdef double[:] params_prop = np.empty(n_params)
@@ -113,9 +106,9 @@ cpdef tuple abc_reject(
 
     for ii in range(n_output):
         for jj in range(n_params):
-            params_prop[jj] = (<Distribution>distribs[jj]).rvs(init_guess[jj], sd[jj])
+            params_prop[jj] = (<Distribution> priors[jj]).rvs0()
 
-        simulated = simu.run(params_prop, fixed_params, n_simu)
+        simulated = simu.run(params_prop, n_simu)
 
         if n_sumstats > 0:
             for kk in range(n_sumstats):
@@ -128,7 +121,7 @@ cpdef tuple abc_reject(
 
     cdef double epsilon = quantile(distances.copy(), p_quantile)
 
-    cdef int acc_counter = n_output - 1
+    cdef int counter = n_output - 1
 
     # use this epsilon to find rest of the samples
     for ii in range(n_output):
@@ -136,9 +129,9 @@ cpdef tuple abc_reject(
 
             while True:
                 for jj in range(n_params):
-                    params_prop[jj] = (<Distribution>distribs[jj]).rvs(init_guess[jj], sd[jj])
+                    params_prop[jj] = (<Distribution> priors[jj]).rvs0()
 
-                simulated = simu.run(params_prop, fixed_params, n_simu)
+                simulated = simu.run(params_prop, n_simu)
 
                 if n_sumstats > 0:
                     for kk in range(n_sumstats):
@@ -146,55 +139,52 @@ cpdef tuple abc_reject(
                 else:
                     sim_ss[:] = simulated
 
-                acc_counter += 1
+                counter += 1
                 distances[ii] = distance.get(obs_ss, sim_ss)
                 if (distances[ii] < epsilon):
                     break
 
-                if (acc_counter % print_iter) == 0:
-                    print "{} iterations done".format(acc_counter)
+                if (counter % print_iter) == 0:
+                    print "{} iterations done".format(counter)
 
             result[ii, :] = params_prop
 
-    print "ABC-Reject accepted {:.3f}% of {} proposals with epsilon = {:.3g}".format(100. * n_output / acc_counter, acc_counter, epsilon)
+    print "ABC-Reject accepted {:.3f}% of {} proposals with epsilon = {:.3g}".format(100. * n_output / counter, counter, epsilon)
 
     return result, epsilon, distances
 
 
 cpdef double[:,:] abc_mcmc(
+                           int n_output,
                            Simulator simu,
-                           double[:] fixed_params,
                            double[:] observed,
+                           list priors,
                            Distance distance,
                            list sumstats,
-                           list distribs,
-                           int n_output,
-                           double epsilon,
+                           list proposals,
                            double[:] init_guess,
-                           double[:] sd,
-                           bool symmetric_proposal = True,
+                           double epsilon,
+                           bool symmetric_proposal = False,
                            int print_iter = 10000
                            ):
     """
     Likelihood-free MCMC sampler.
     Inputs:
-    - simu: an instance of a Simulator class
-    - fixed_params: constant parameter for the simulator
-    - observed: a vector of observations
-    - distance: instance of distance class
-    - sumstats: list of instances of summary statistics class
-    - distribs: list of instances of distribution class for parameters
     - n_output: number of output samples
-    - epsilon: tolerance in acceptance criterion
+    - simu: instance of the Simulator class
+    - observed: vector of observations
+    - priors: list of instances of the Distribution class
+    - distance: instance of the Distance class
+    - sumstats: list of instances of the SummaryStat class
+    - proposals: list of instances of the Distribution class (Markov kernels)
     - init_guess: guess
-    - sd: standard deviations of the kernel
-    - symmetric_proposal: whether the kernel is symmetric
+    - epsilon: acceptance threshold
+    - symmetric_proposal: whether the proposal distribution is symmetric
     - print_iter: report progress every i iterations
     """
-    cdef int n_params = len(distribs)
+    cdef int n_params = len(priors)
     cdef int n_simu = observed.shape[0]
     cdef int ii, jj, kk
-    cdef double[:] params_prop = np.empty(n_params)
     cdef double[:] simulated = np.empty_like(observed)
 
     cdef int n_sumstats = len(sumstats)
@@ -217,35 +207,45 @@ cpdef double[:,:] abc_mcmc(
     cdef bool accept_MH = True
 
     for ii in range(1, n_output):
+
+        # propose new parameters
         for jj in range(n_params):
-            params_prop[jj] = (<Distribution>distribs[jj]).rvs(result[ii-1, jj], sd[jj])
+            result[ii, jj] = (<Distribution> proposals[jj]).rvs1(result[ii-1, jj])
 
-        simulated = simu.run(params_prop, fixed_params, n_simu)
-
-        if n_sumstats > 0:
-            for kk in range(n_sumstats):
-                sim_ss[kk] = (<SummaryStat> sumstats[kk]).get(simulated)
-        else:
-            sim_ss[:] = simulated
-
-        if not symmetric_proposal:  # no need to evaluate the MH-ratio
-            accprob = 1.
+        accprob = 1.
+        if symmetric_proposal:  # no need to evaluate the MH-ratio, but check that prior > 0
             for jj in range(n_params):
-                accprob *= ( (<Distribution>distribs[jj]).pdf( result[ii-1, jj],
-                             params_prop[jj], sd[jj] )
-                           / (<Distribution>distribs[jj]).pdf( params_prop[jj],
-                             result[ii-1, jj], sd[jj] ) )
+                accprob *= (<Distribution> priors[jj]).pdf0(result[ii, jj])
+            accept_MH = accprob > 0.
+
+        else:  # evaluate the Metropolis--Hastings ratio
+            for jj in range(n_params):
+                accprob *= (  (<Distribution> priors[jj]).pdf0(result[ii, jj])
+                            * (<Distribution> proposals[jj]).pdf1( result[ii-1, jj], result[ii, jj] )
+                            /((<Distribution> priors[jj]).pdf0(result[ii-1, jj])
+                            * (<Distribution> proposals[jj]).pdf1( result[ii, jj], result[ii-1, jj] ) )
+                           )
             accept_MH = accprob >= runif()
 
-        if (accept_MH and distance.get(obs_ss, sim_ss) < epsilon):
-            result[ii, :] = params_prop
-            acc_counter += 1
-        else:
+        if not accept_MH:  # no need to proceed further, reject proposal
             result[ii, :] = result[ii-1, :]
 
+        else:  # run simulator with the proposed parameters
+            simulated = simu.run(result[ii, :], n_simu)
+            if n_sumstats > 0:
+                for kk in range(n_sumstats):
+                    sim_ss[kk] = (<SummaryStat> sumstats[kk]).get(simulated)
+            else:
+                sim_ss[:] = simulated
+
+            if (distance.get(obs_ss, sim_ss) < epsilon):
+                acc_counter += 1
+            else:
+                result[ii, :] = result[ii-1, :]
+
         if (ii % print_iter) == 0:
-            print "{} iterations done, {} accepted so far ({:.3}%)".format(ii, acc_counter,
-                  100. * acc_counter / ii)
+            print "{} iterations done, {} accepted so far ({:.3}%)".format(
+                  ii, acc_counter, 100. * acc_counter / ii )
 
     print "ABC-MCMC accepted {:.3f}% of proposals".format(100. * acc_counter / n_output)
 

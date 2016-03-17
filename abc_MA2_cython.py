@@ -4,12 +4,13 @@ import matplotlib.pyplot as plt
 import abclib
 
 n_obs = 100
+n_samples = 100
 params_true = np.array([1.4, 0.8])
 n_output = int(1e4)
 
 abclib.init_rand()
-simu = abclib.MA2()
-observed = simu(params_true, n_obs)
+simu = abclib.MA2(n_obs, n_samples)
+observed = simu(params_true)
 print "Range of observed data: {:.3f} .. {:.3f}, mean: {:.3f}".format(np.array(observed).min(), np.array(observed).max(), np.array(observed).mean())
 
 priors = [abclib.Uniform(0., 5.), abclib.Uniform(0., 5.)]

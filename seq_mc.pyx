@@ -93,7 +93,7 @@ cpdef double[:,:] abc_seq_mc(
                 for jj in range(n_params):
                     result[ii, jj] = normal.rvs( result_old[sel_ind, jj], sd[jj] )
 
-                simulated = simu.run(result[ii, :], n_simu)
+                simulated = simu.run(result[ii, :])
 
                 if n_sumstats > 0:
                     for kk in range(n_sumstats):

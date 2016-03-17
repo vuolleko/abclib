@@ -13,6 +13,13 @@ cdef inline double sum_of(double[:] data) nogil:
     return sum0
 
 
+cdef inline double mean_of(double[:] data) nogil:
+    """
+    Arithmetic mean of data.
+    """
+    return sum_of(data) / data.shape[0]
+
+
 cdef inline double weighted_mean_of(double[:] data, double[:] weights) nogil:
     """
     Weighted mean of data.

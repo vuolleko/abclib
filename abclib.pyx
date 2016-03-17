@@ -108,7 +108,7 @@ cpdef tuple abc_reject(
         for jj in range(n_params):
             params_prop[jj] = (<Distribution> priors[jj]).rvs0()
 
-        simulated = simu.run(params_prop, n_simu)
+        simulated = simu.run(params_prop)
 
         if n_sumstats > 0:
             for kk in range(n_sumstats):
@@ -131,7 +131,7 @@ cpdef tuple abc_reject(
                 for jj in range(n_params):
                     params_prop[jj] = (<Distribution> priors[jj]).rvs0()
 
-                simulated = simu.run(params_prop, n_simu)
+                simulated = simu.run(params_prop)
 
                 if n_sumstats > 0:
                     for kk in range(n_sumstats):
@@ -231,7 +231,7 @@ cpdef double[:,:] abc_mcmc(
             result[ii, :] = result[ii-1, :]
 
         else:  # run simulator with the proposed parameters
-            simulated = simu.run(result[ii, :], n_simu)
+            simulated = simu.run(result[ii, :])
             if n_sumstats > 0:
                 for kk in range(n_sumstats):
                     sim_ss[kk] = (<SummaryStat> sumstats[kk]).get(simulated)

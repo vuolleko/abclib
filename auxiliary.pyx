@@ -119,3 +119,66 @@ cdef inline void _tdms_merge(double[:] data, double[:] data2, int ind_start, int
         else:
             data2[ii] = data[ind1]
             ind1 += 1
+
+
+cdef inline double[:, :] cholesky(double[:, :] matrix):
+    """
+    Cholesky decomposition of a matrix A = L * L^T.
+    Matrix A must be symmetric and positive-definite.
+    The Cholesky-Banachiewicz algorithm.
+    """
+    cdef int ii, jj, kk
+    cdef int nn = matrix.shape[0]
+    cdef double[:, :] decomp = np.zeros((nn, nn))
+
+    for ii in range(nn):
+        for jj in range(ii+1):
+            decomp[ii, jj] = matrix[ii, jj]
+            for kk in range(jj):
+                decomp[ii, jj] -= decomp[ii, kk] * decomp[jj, kk]
+            if ii == jj:
+                decomp[ii, ii] = sqrt( decomp[ii, ii] )
+            else:
+                decomp[ii, jj] /= decomp[jj, jj]
+
+    return decomp
+
+
+cdef inline double[:] solve_lt(double[:, :] lt_matrix, double[:] vector):
+    """
+    Solves the linear equation L x = b.
+    Inputs:
+    - lt_matrix: lower-triangular matrix L
+    - vector: right-hand-side b
+    """
+    cdef int ii, jj
+    cdef int nn = vector.shape[0]
+    cdef double[:] result = np.empty(nn)
+
+    for ii in range(nn):
+        result[ii] = vector[ii]
+        for jj in range(ii):
+            result[ii] -= lt_matrix[ii, jj] * result[jj]
+        result[ii] /= lt_matrix[ii, ii]
+
+    return result
+
+
+cdef inline double[:] solve_ut(double[:, :] ut_matrix, double[:] vector):
+    """
+    Solves the linear equation L.T x = b.
+    Inputs:
+    - ut_matrix: upper-triangular matrix L.T
+    - vector: right-hand-side b
+    """
+    cdef int ii, jj
+    cdef int nn = vector.shape[0]
+    cdef double[:] result = np.empty(nn)
+
+    for ii in range(nn-1, -1, -1):
+        result[ii] = vector[ii]
+        for jj in range(nn-1, ii, -1):
+            result[ii] -= ut_matrix[ii, jj] * result[jj]
+        result[ii] /= ut_matrix[ii, ii]
+
+    return result

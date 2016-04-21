@@ -57,6 +57,7 @@ include "classification.pyx"
 
 # ************* Approximate Bayesian computation ************
 include "seq_mc.pyx"
+include "bolfi.pyx"
 
 
 cpdef tuple abc_reject(

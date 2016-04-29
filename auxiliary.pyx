@@ -182,3 +182,14 @@ cdef inline double[:] solve_ut(double[:, :] ut_matrix, double[:] vector):
         result[ii] /= ut_matrix[ii, ii]
 
     return result
+
+
+cdef inline double norm2(double[:] vector) nogil:
+    """
+    Computes the L2-norm of a vector.
+    """
+    cdef int ii
+    cdef double result = 0.
+    for ii in range(vector.shape[0]):
+        result += vector[ii] * vector[ii]
+    return result

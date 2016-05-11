@@ -10,8 +10,8 @@ cdef inline double[:] _denorm_args(double[:] x, double[:] limits_min, double[:] 
 
 # ctypedef double (*fun_type)(double[:])
 
-cdef minimize_DIRECT(fun, double[:] limits_min,
-    double[:] limits_max, double min_measure=1e-6, int max_iter=100, int max_eval=5000):
+def minimize_DIRECT(fun, double[:] limits_min,
+    double[:] limits_max, double min_measure=1e-9, int max_iter=100, int max_eval=5000):
     """
     Find the function global minimum with the DIRECT (DIviding RECTangles)
     algorithm. The function must be Lipschitz continuous.
@@ -117,6 +117,47 @@ cdef minimize_DIRECT(fun, double[:] limits_min,
         funmin = funvals[ind_funmin]
         xmin = centers[ind_funmin, :]
         n_iter += 1
-        print n_iter, n_eval, np.asarray(xmin), funmin
+        # print n_iter, n_eval, np.asarray(xmin), funmin
 
     return _denorm_args(xmin, limits_min, limits_max)
+
+
+def minimize_conjgrad(fun, grad, double[:] guess,
+                      double tolerance=1e-9, int max_iter=1000,
+                      double max_stepsize=1., double min_stepsize=1e-8,
+                      double ss_factor=0.5, double c1_factor=1e-4):
+    """
+    Find a function minimum with the non-linear conjugate gradient method
+    using the Polak-Ribiere beta coefficient. Line search is performed with
+    backtracking.
+    """
+    cdef double[:] xmin = guess
+    cdef np.ndarray[np.float_t] hilldir, hilldir_old, stepdir
+    cdef double beta, stepsize, compval, funval
+    cdef int ii = 0
+
+    # initial directions
+    hilldir = grad(xmin)
+    stepdir = -1. * hilldir
+
+    while not np.allclose( hilldir, 0., atol=tolerance ) and ii < max_iter:
+        ii += 1
+        hilldir_old = hilldir.copy()
+
+        # Backtrack to find appropriate stepsize
+        stepsize = max_stepsize
+        compval = hilldir.T.dot(stepdir) * c1_factor
+        funval = fun(xmin)
+        while fun(xmin + stepsize * stepdir) > funval + compval * stepsize and stepsize > min_stepsize:
+            stepsize *= ss_factor
+
+        xmin = xmin + stepsize * stepdir
+        hilldir = grad(xmin)
+
+        # Polak-Ribiere
+        beta = hilldir.T.dot(hilldir - hilldir_old) / hilldir_old.T.dot(hilldir_old)
+        beta = max(0., beta)  # reset if not descent direction
+
+        stepdir = beta * stepdir - hilldir
+
+    return xmin

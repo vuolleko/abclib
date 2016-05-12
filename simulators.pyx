@@ -34,7 +34,7 @@ cdef class Simulator:
         pass
 
 
-cdef class Gauss(Simulator):
+cdef class Simu_Gauss(Simulator):
     """
     Gaussian simulator.
     """
@@ -45,6 +45,28 @@ cdef class Gauss(Simulator):
 
         for ii in range(self.n_simu):
             result[ii] = params[0] + norm.rvs0() * params[1]
+
+        return result
+
+
+cdef class Simu_Gauss_mu(Simu_Gauss):
+    """
+    Gaussian simulator with sigma = 1.
+    """
+    cdef double[:] run1(self, double[:] params):
+        return Simu_Gauss.run1(self, np.array([params[0], 1.]) )
+
+
+cdef class Simu_Simple_Fun(Simulator):
+    """
+    Non-stochastic 1D test function.
+    """
+    cdef double[:] run1(self, double[:] params):
+        cdef double[:] result = np.empty(self.n_simu)
+        cdef int ii
+
+        for ii in range(self.n_simu):
+            result[ii] = cos(params[ii])
 
         return result
 

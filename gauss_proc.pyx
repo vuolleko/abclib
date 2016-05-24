@@ -6,7 +6,7 @@ cdef class GaussProc:
     Implements a Gaussian process for usage with Bayesian optimization.
     """
     cdef double[:, :] params
-    cdef double[:] distances
+    cdef double[:] responses
     cdef double[:, :] covariances
     cdef double[:] means
     cdef double[:] diffvec
@@ -23,19 +23,19 @@ cdef class GaussProc:
         self.ii_eval = 0
         self.ii_evidence = 0
         self.params = np.empty((n_eval, n_dim))
-        self.distances = np.empty(n_eval)
+        self.responses = np.empty(n_eval)
         self.covariances = np.empty((n_eval, n_eval))
         self.means = np.empty(n_eval)
-        self.diffvec = np.empty(self.ii_eval)
+        self.diffvec = np.empty(n_eval)
         self.mean_fun = mean_fun
         self.cov_fun = cov_fun
 
-    cdef void add_evidence(self, double[:] params_new, double distance):
+    cdef void add_evidence(self, double[:] params_new, double response):
         """
         Add new evidence to GP.
         """
-        self.params[self.ii_evidence, :] = np.asarray(params_new)
-        self.distances[self.ii_evidence] = distance
+        self.params[self.ii_evidence, :] = params_new
+        self.responses[self.ii_evidence] = response
         self.ii_evidence += 1
 
     cdef void update(self):
@@ -62,7 +62,7 @@ cdef class GaussProc:
         """
         cdef int ii
         for ii in range(self.ii_eval):
-            self.diffvec[ii] = self.distances[ii] - self.means[ii]
+            self.diffvec[ii] = self.responses[ii] - self.means[ii]
 
         self.chol_K = cholesky(self.covariances[:self.ii_eval, :self.ii_eval])
         self.inv_K_diff = solve_ut( self.chol_K.T,
@@ -119,9 +119,10 @@ cdef class GaussProc:
         cdef double[:] v_vec = solve_lt(self.chol_K, k_vec)
         cdef double var_new = self.cov_fun.diag() - norm2(v_vec)
 
-        return mean_new + sqrt(self.eta_factor * var_new)
+        return mean_new - sqrt(self.eta_factor * var_new)
 
-    cdef double[:] grad_acquis_fun(self, double[:] params_new):
+    def grad_acquis_fun(self, double[:] params_new):
+    # cdef double[:] grad_acquis_fun(self, double[:] params_new):
         """
         Gradient of the acquisition function (lower confidence bound
         selection criterion).
@@ -131,23 +132,53 @@ cdef class GaussProc:
         cdef int tt = self.ii_eval
         cdef double[:] k_vec = np.empty(tt)
         cdef np.ndarray[np.float_t] grad_k_vec = np.empty(tt)
-        cdef int ii
+        cdef np.ndarray[np.float_t] grad_v_vec = np.empty(tt)
+        cdef np.ndarray[np.float_t] v_vec, v_vec_solved
+        cdef int ii, jj
 
         for ii in range(tt):
             k_vec[ii] = self.cov_fun.val(params_new, self.params[ii, :])
-            grad_k_vec[ii] = self.cov_fun.grad(params_new, self.params[ii, :], ii)
 
-        cdef double[:] v_vec = solve_lt(self.chol_K, k_vec)
+        v_vec = np.asarray( solve_lt(self.chol_K, k_vec) )
         cdef double var_new = self.cov_fun.diag() - norm2(v_vec)
-        cdef double[:] v_vec_solved = solve_ut(self.chol_K.T, v_vec)
+        v_vec_solved = np.asarray( solve_ut(self.chol_K.T, v_vec) )
 
-        for ii in range(nn):
-            grads[ii] = self.mean_fun.grad(params_new, ii)
-            grads[ii] += grad_k_vec[ii] * self.inv_K_diff[ii]
-            if var_new != 0:
-                grads[ii] += sqrt(self.eta_factor / var_new) * grad_k_vec[ii] * v_vec_solved[ii]
+        for jj in range(nn):
+            for ii in range(tt):
+                grad_k_vec[ii] = self.cov_fun.grad(params_new, self.params[ii, :], jj)
+            grad_v_vec = np.asarray( solve_lt(self.chol_K, grad_k_vec) )
 
-        return grads
+            grads[jj] = self.mean_fun.grad(params_new, jj)
+            grads[jj] += grad_k_vec.T.dot( np.asarray(self.inv_K_diff) )
+            if var_new != 0:  # assume gradient of diagonals = 0
+                grads[jj] += sqrt(self.eta_factor / var_new) * grad_v_vec.T.dot(v_vec)
+
+        return np.asarray(grads)
+
+    def regression(self, double[:, :] param_array):
+        """
+        Sample average approximation of the regression function.
+        """
+        cdef int tt = self.ii_eval
+        cdef np.ndarray[np.float_t] k_vec = np.empty(tt)
+        cdef int nn = param_array.shape[0]
+        cdef double[:] mus = np.empty(nn)
+        cdef double[:] sigmas = np.empty(nn)
+        cdef double[:] v_vec
+        cdef int ii, jj
+
+        # covariance of parameter array with all known samples
+        for jj in range(nn):
+            for ii in range(tt):
+                k_vec[ii] = self.cov_fun.val(param_array[jj, :], self.params[ii, :])
+
+            mus[jj] = self.mean_fun.val(param_array[jj, :])
+            mus[jj] += k_vec.T.dot( np.asarray(self.inv_K_diff) )
+
+            v_vec = solve_lt(self.chol_K, k_vec)
+            sigmas[jj] = self.cov_fun.diag() - norm2(v_vec)
+
+        return np.asarray(mus), np.asarray(sigmas)
 
 
 # ****************** Mean functions ******************
@@ -193,9 +224,9 @@ cdef class GP_Mean_Cvx(GP_Mean):
     cdef double c_factor
 
     def __init__(self, int n_dim, double[:] params_init):
-        self.a_factor = np.empty(self.n_dim)
-        self.b_factor = np.empty(self.n_dim)
-        super(GP_Mean_Cvx, self).__init__(params_init)
+        self.a_factor = np.empty(n_dim)
+        self.b_factor = np.empty(n_dim)
+        super(GP_Mean_Cvx, self).__init__(n_dim, params_init)
         self.n_param = 2 * n_dim + 1
 
     cdef double val(self, double[:] xx):
@@ -234,10 +265,10 @@ cdef class GP_Mean_Cvx(GP_Mean):
 cdef class GP_Cov:
     """
     A parent class for the covariance functions of a Gaussian process.
-    Implements the constant case.
+    Implements the constant variance case.
     """
     cdef int n_dim, n_param
-    cdef double cov_factor
+    cdef double var_factor
 
     def __init__(self, int n_dim, double[:] params_init):
         self.n_dim = n_dim
@@ -248,13 +279,13 @@ cdef class GP_Cov:
         """
         Covariance function: constant.
         """
-        return self.cov_factor
+        return 0.
 
     cdef double diag(self):
         """
         Variance of parameters.
         """
-        return self.cov_factor
+        return self.var_factor
 
     cdef double grad(self, double[:] xx, double[:] yy, int ind_dim):
         """
@@ -266,7 +297,7 @@ cdef class GP_Cov:
         """
         Set parameters.
         """
-        self.cov_factor = params[0]
+        self.var_factor = params[0]
 
 
 cdef class GP_Cov_Sq_Exp(GP_Cov):
@@ -275,11 +306,11 @@ cdef class GP_Cov_Sq_Exp(GP_Cov):
     """
     cdef double sigma2_signal
     cdef double sigma2_obs
-    cdef double[:] scale
+    cdef double[:] scale2
 
     def __init__(self, int n_dim, double[:] params_init):
-        self.scale = np.empty(self.n_dim)
-        super(GP_Cov_Sq_Exp, self).__init__(params_init)
+        self.scale2 = np.empty(n_dim)
+        super(GP_Cov_Sq_Exp, self).__init__(n_dim, params_init)
         self.n_param = n_dim + 2
 
     cdef double val(self, double[:] xx, double[:] yy):
@@ -292,8 +323,8 @@ cdef class GP_Cov_Sq_Exp(GP_Cov):
         cdef double temp
 
         for ii in range(nn):
-            temp = (xx[ii] - yy[ii]) / self.scale[ii]
-            sum0 += temp * temp
+            temp = (xx[ii] - yy[ii])
+            sum0 += temp * temp / self.scale2[ii]
 
         return self.sigma2_signal * exp(-sum0)
 
@@ -307,8 +338,8 @@ cdef class GP_Cov_Sq_Exp(GP_Cov):
         """
         Gradient of Covariance function: Squared exponential covariance.
         """
-        cdef double res = self.fun(xx, yy)
-        res *= 2. * (xx[ind_dim] - yy[ind_dim]) / ( self.scale[ind_dim] * self.scale[ind_dim] )
+        cdef double res = self.val(xx, yy)
+        res *= 2. * (yy[ind_dim] - xx[ind_dim]) / self.scale2[ind_dim]
         return res
 
     cdef void set_params(self, double[:] params):
@@ -320,4 +351,4 @@ cdef class GP_Cov_Sq_Exp(GP_Cov):
         self.sigma2_signal = params[0]
         self.sigma2_obs = params[1]
         for ii in range(self.n_dim):
-            self.scale[ii] = params[ii + 2]
+            self.scale2[ii] = params[ii + 2]

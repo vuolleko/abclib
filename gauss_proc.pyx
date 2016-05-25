@@ -78,10 +78,11 @@ cdef class GaussProc:
         self.mean_fun.set_params( hyperparams[:offset] )
         self.cov_fun.set_params( hyperparams[offset:] )
 
-    def log_marginal_lh(self, double[:] hyperparams):
+    def neg_log_marginal_lh(self, double[:] hyperparams):
     # cdef double log_marginal_lh(self, double[:] hyperparams):
         """
-        Log marginal likelihood of given hyperparameters.
+        -1 * Log marginal likelihood of given hyperparameters.
+        -1 to turn minimization into maximization.
         Updates hyperparameters, means and covariances.
         """
         self.set_hyperparams(hyperparams)
@@ -95,8 +96,8 @@ cdef class GaussProc:
         cdef int ii
         cdef double lmlh = 0.
         for ii in range(self.ii_eval):
-            lmlh -= self.diffvec[ii] * self.inv_K_diff[ii]
-            lmlh -= 2. * self.covariances[ii, ii]
+            lmlh += self.diffvec[ii] * self.inv_K_diff[ii]
+            lmlh += 2. * self.covariances[ii, ii]
 
         return lmlh
 
@@ -155,15 +156,51 @@ cdef class GaussProc:
 
         return np.asarray(grads)
 
+    def acquis_fun_mu(self, double[:] params_new):
+        """
+        Acquisition function, exploitation only.
+        """
+        cdef int tt = self.ii_eval
+        cdef np.ndarray[np.float_t] k_vec = np.empty(tt)
+        cdef int ii
+
+        # covariance of new parameters with all of the old ones
+        for ii in range(tt):
+            k_vec[ii] = self.cov_fun.val(params_new, self.params[ii, :])
+
+        cdef double mean_new = self.mean_fun.val(params_new)
+        mean_new += k_vec.T.dot( np.asarray(self.inv_K_diff) )
+
+        return mean_new
+
+    def grad_acquis_fun_mu(self, double[:] params_new):
+        """
+        Gradient of the acquisition function, exploitation only.
+        """
+        cdef int nn = self.n_dim
+        cdef double[:] grads = np.empty(nn)
+        cdef int tt = self.ii_eval
+        cdef np.ndarray[np.float_t] grad_k_vec = np.empty(tt)
+        cdef int ii, jj
+
+        for jj in range(nn):
+            for ii in range(tt):
+                grad_k_vec[ii] = self.cov_fun.grad(params_new, self.params[ii, :], jj)
+
+            grads[jj] = self.mean_fun.grad(params_new, jj)
+            grads[jj] += grad_k_vec.T.dot( np.asarray(self.inv_K_diff) )
+
+        return np.asarray(grads)
+
     def regression(self, double[:, :] param_array):
         """
-        Sample average approximation of the regression function.
+        Evaluate the GP mean and variance for the input.
         """
         cdef int tt = self.ii_eval
         cdef np.ndarray[np.float_t] k_vec = np.empty(tt)
         cdef int nn = param_array.shape[0]
         cdef double[:] mus = np.empty(nn)
-        cdef double[:] sigmas = np.empty(nn)
+        cdef double[:] sigma2s = np.empty(nn)
         cdef double[:] v_vec
         cdef int ii, jj
 
@@ -176,10 +213,22 @@ cdef class GaussProc:
             mus[jj] += k_vec.T.dot( np.asarray(self.inv_K_diff) )
 
             v_vec = solve_lt(self.chol_K, k_vec)
-            sigmas[jj] = self.cov_fun.diag() - norm2(v_vec)
+            sigma2s[jj] = self.cov_fun.diag() - norm2(v_vec)
 
-        return np.asarray(mus), np.asarray(sigmas)
+        return np.asarray(mus), np.asarray(sigma2s)
 
+    def exploit(self):
+        """
+        Find the parameters that minimize the mean function of GP.
+        """
+        cdef double[:] limits_min, limits_max
+        cdef double[:] params_best
+        limits_min = np.min(self.params[:self.ii_eval, :], axis=0)
+        limits_max = np.max(self.params[:self.ii_eval, :], axis=0)
+
+        params_best = minimize_DIRECT(self.acquis_fun_mu,
+                                      limits_min, limits_max)
+        return np.asarray(params_best)
 
 # ****************** Mean functions ******************
 

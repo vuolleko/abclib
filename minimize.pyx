@@ -11,13 +11,15 @@ cdef inline double[:] _denorm_args(double[:] x, double[:] limits_min, double[:] 
 # ctypedef double (*fun_type)(double[:])
 
 def minimize_DIRECT(fun, double[:] limits_min,
-    double[:] limits_max, double min_measure=1e-9, int max_iter=100, int max_eval=5000):
+    double[:] limits_max, double min_measure=1e-9, int max_iter=0, int max_eval=5000):
     """
     Find the function global minimum with the DIRECT (DIviding RECTangles)
     algorithm. The function must be Lipschitz continuous.
     Jones et al., J. Optim. Theory Appl., 79(1), 157-181, 1993.
     """
     cdef int n_dim = limits_max.shape[0]
+    if max_iter == 0:
+        max_iter = n_dim * 100
     cdef int maxsize = max_eval * 2 * n_dim
     cdef np.ndarray[np.float_t, ndim=2] centers = np.empty((maxsize, n_dim))
     cdef np.ndarray[np.float_t] funvals = np.empty(maxsize)

@@ -51,17 +51,18 @@ def abc_bolfi(
     cdef double[:] hyperparams = np.empty(len(hyperp_min))
     cdef double distance_
 
-    for ii in range(n_eval):
+    for ii in range(1, n_eval+1):
 
         # use initial set of parameters
-        if ii < n_init:
-            params = params_init[ii]
+        if ii <= n_init:
+            params = params_init[ii-1]
 
         # get rest by minimizing the acquisition function
         else:
             # optimize hyperparameters
             if ii % hp_learn_interval == 0:
-                hyperparams = minimize_DIRECT(gp.log_marginal_lh, hyperp_min, hyperp_max)
+                print "Optimizing hyperparameters..."
+                hyperparams = minimize_DIRECT(gp.neg_log_marginal_lh, hyperp_min, hyperp_max)
                 # hyperparams = fmin_l_bfgs_b(gp.log_marginal_lh, hyperparams,
                   # bounds=zip(hyperp_min, hyperp_max))[0]
                 gp.set_hyperparams(hyperparams)
@@ -80,6 +81,7 @@ def abc_bolfi(
             params = fmin_l_bfgs_b(gp.acquis_fun, params, fprime=gp.grad_acquis_fun,
                                    bounds=zip(limits_min, limits_max))[0]
 
+            jj = 0
             while True:
                 # jitter params for more exploration
                 params = params + np.random.randn(n_params) * sigma_jitter
@@ -90,7 +92,9 @@ def abc_bolfi(
                 # avoid too similar params (may cause non-pos. def. cov. matrix)
                 if not np.any( np.all( np.isclose(params, gp.params, atol=param_epsilon), axis=1 ) ):
                     break
-                print "A too similar parameter set skipped at ii=", ii
+                jj += 1
+                if jj % print_iter == 0:
+                    print "Trying to find dissimilar parameters..."
 
             if ii % print_iter == 0:
                 print "{:d}/{:d} done".format(ii, n_eval)

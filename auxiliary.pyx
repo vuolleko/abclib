@@ -193,3 +193,70 @@ cdef inline double norm2(double[:] vector) nogil:
     for ii in range(vector.shape[0]):
         result += vector[ii] * vector[ii]
     return result
+
+
+cdef inline int is_pos_def(double[:, :] matrix):
+    """
+    Returns 1 if matrix is positive definite, 0 otherwise.
+    Sylvester's criterion.
+    """
+    if matrix[0, 0] <= 0.:
+        return 0
+    cdef int nn = matrix.shape[0]
+    if nn != matrix.shape[1]:
+        return 0
+    cdef int ii
+    for ii in range(1, nn+1):
+        if determinant(matrix[:ii, :ii]) <= 0.:
+            return 0
+    return 1
+
+
+cdef inline double determinant(double[:, :] matrix_in):
+    """
+    Calculates the determinant of a symmetric matrix
+    using LU decomposition (Doolittle algorithm).
+    """
+    cdef double[:, :] matrix = matrix_in.copy()
+    cdef int nn = matrix.shape[0]
+    cdef int det_permutation = 1
+    cdef double[:] temp_row
+    cdef double[:, :] upper = np.zeros((nn, nn))
+    cdef double[:, :] lower = np.zeros((nn, nn))
+
+    cdef int ii, jj, kk
+
+    # partial pivoting for stability
+    for ii in range(nn-1):
+        jj = ii + np.argmax( np.abs(matrix[ii:, ii]) )
+        if ii != jj:
+            temp_row = matrix[ii, :].copy()
+            matrix[ii, :] = matrix[jj, :]
+            matrix[jj, :] = temp_row
+            det_permutation *= -1
+
+    # the lower matrix will be unit triangular
+    for ii in range(nn):
+        lower[ii, ii] = 1.
+
+    # solve L and U
+    for ii in range(nn):
+
+        for jj in range(ii, nn):
+            sum0 = 0.
+            for kk in range(ii):
+                sum0 += lower[ii, kk] * upper[kk, jj]
+            upper[ii, jj] = matrix[ii, jj] - sum0
+
+            if jj > ii and ii < nn-1:
+                sum0 = 0.
+                for kk in range(ii):
+                    sum0 += lower[jj, kk] * upper[kk, ii]
+                lower[jj, ii] = (matrix[jj, ii] - sum0) / upper[ii, ii]
+
+    # calculate the determinant (N.B. det(L)=1)
+    cdef double result = <double> det_permutation
+    for ii in range(nn):
+        result *= upper[ii, ii]
+
+    return result

@@ -163,3 +163,159 @@ def minimize_conjgrad(fun, grad, double[:] guess,
         stepdir = beta * stepdir - hilldir
 
     return xmin
+
+
+def minimize_l_bfgs_b(fun, grad, double[:] guess,
+                      np.ndarray[np.float_t] limits_min,
+                      np.ndarray[np.float_t] limits_max,
+                      int max_iter=1000, double min_stepsize=1e-8,
+                      double ss_factor=0.5, double c1_factor=1e-4,
+                      int n_history=10, double epsilon_curvature=2.2e-16):
+    """
+    Find a function minimum in a constrained area with the L-BFGS-B algorithm.
+    R. H. Byrd, P. Lu and J. Nocedal. A Limited Memory Algorithm for Bound Constrained
+    Optimization, (1995), SIAM Journal on Scientific and Statistical Computing,
+    16, 5, pp. 1190-1208.
+    Line search is performed with simple backtracking (TODO: improve).
+    """
+    cdef int n_dim = guess.shape[0]
+    cdef np.ndarray[np.float_t] xmin = np.asarray(guess)
+    cdef np.ndarray[np.float_t] x_cauchy = np.zeros(n_dim)
+    cdef np.ndarray[np.float_t] gradx = grad(xmin)
+    cdef np.ndarray[np.float_t] x_bar, xdiff, gdiff, grad_proj, d_u, direction
+    cdef np.ndarray[np.float_t] x_old, g_old, alphas_max
+    cdef np.ndarray[np.float_t] tn, r_c, c, d, p, wbt, gwM, v
+    cdef np.ndarray[np.float_t, ndim=2] Y, S, L, D, M, W, SY, N, WTZ
+    cdef np.ndarray[np.int_t] freevars
+    Y = np.empty((n_dim, 0))
+    S = np.empty((n_dim, 0))
+    L = np.empty((0, 0))
+    D = np.empty((0, 0))
+    M = np.empty((0, 0))
+    W = np.empty((n_dim, 0))
+    cdef double theta = 1.
+    cdef list F
+    cdef double stepsize, funval, compval, fp, fpp
+    cdef double delta_t, delta_t_min, t, t_old, z_b, theta_inv
+    cdef int b
+    grad_proj = np.ones(n_dim)
+    cdef double zero_epsilon = 1e-17
+
+    cdef int kk = 0
+    while np.abs(grad_proj).max() > 1e-5 and kk < max_iter:
+        # print "\nIter {}, x = {}, g = {}".format(kk, xmin.ravel(), gradx.ravel())
+
+        # ****** Calculate the Cauchy point ******
+        tn = np.where(gradx < 0., (xmin-limits_max)/gradx,
+                      np.where(gradx > 0., (xmin-limits_min)/gradx, np.inf) )
+        d = np.where(tn < zero_epsilon, 0., -gradx)
+        F = [ii for ii in np.argsort(tn) if tn[ii] > zero_epsilon]
+        p = W.T.dot(d)
+        c = np.zeros_like(p)
+
+        if len(F) > 0:
+            fp = -d.T.dot(d)
+            fpp = -theta * fp - p.T.dot(M).dot(p)
+            if abs(fpp) < zero_epsilon:
+                delta_t_min = 0.
+            else:
+                delta_t_min = -fp / fpp
+            t_old = 0.
+            t = tn[ F[0] ]
+            delta_t = t
+
+            while delta_t_min >= delta_t:
+                b = F.pop(0)
+                t = tn[b]
+                delta_t = t - t_old
+                x_cauchy[b] = limits_max[b] if d[b] > 0. else limits_min[b]
+                z_b = x_cauchy[b] - xmin[b]
+                c += delta_t * p
+                wbt = W[b, :]
+                gwM = gradx[b] * wbt.dot(M)
+                fp += delta_t * fpp + gradx[b]*gradx[b] + theta*gradx[b]*z_b - gwM.dot(c)
+                fpp -= theta*gradx[b]*gradx[b] + 2. * gwM.dot(p) + gradx[b] * gwM.dot(wbt.T)
+                p += gradx[b] * wbt.T
+                d[b] = 0.
+                if abs(fpp) < zero_epsilon:
+                    delta_t_min = 0.
+                else:
+                    delta_t_min = -fp / fpp
+                t_old = t
+
+                if len(F) == 0:
+                    break
+
+            delta_t_min = max(delta_t_min, 0.)
+            t_old += delta_t_min
+            for ii in F:
+                x_cauchy[ii] = xmin[ii] + t_old * d[ii]
+            c += delta_t_min * p
+
+        # print "Cauchy: ", x_cauchy
+
+        # ****** Calculate the search direction (direct primal method) ******
+        freevars = np.where((x_cauchy != limits_min) & (x_cauchy != limits_max))[0]
+        # print "Free vars at CP: ", len(freevars)
+        theta_inv = 1. / theta
+
+        r_c = ( gradx + theta * (x_cauchy - xmin) - W.dot(M).dot(c) )[freevars]
+        WTZ = W.T[:, freevars]
+        v = M.dot(WTZ).dot(r_c)
+        N = theta_inv * WTZ.dot(WTZ.T)
+        N = np.eye(N.shape[0]) - M.dot(N)
+        v = np.linalg.solve( N, v )
+
+        d_u = -theta_inv * ( r_c + theta_inv * WTZ.T.dot(v) )
+        alphas_max = np.where(d_u > 0.,
+                              (limits_max[freevars] - x_cauchy[freevars]) / d_u,
+                              np.where( d_u < 0.,
+                              (limits_min[freevars] - x_cauchy[freevars]) / d_u,
+                              0. )
+                             )
+
+        x_bar = x_cauchy.copy()
+        if np.any(freevars):
+            x_bar[freevars] += alphas_max.min() * d_u
+
+        # Backtrack to find appropriate stepsize
+        direction = x_bar - xmin
+        stepsize = 1.
+        compval = gradx.T.dot(direction) * c1_factor
+        funval = fun(xmin)
+        while fun(xmin + stepsize * direction) > funval + compval * stepsize and stepsize > min_stepsize:
+            stepsize *= ss_factor
+
+        # update x and calculate the gradient
+        x_old = xmin.copy()
+        g_old = gradx.copy()
+        xmin += stepsize * direction
+        gradx = grad(xmin)
+
+        # update history and related matrices, if the curvature condition is ok
+        xdiff = xmin - x_old
+        gdiff = gradx - g_old
+
+        if gdiff.dot(xdiff) > epsilon_curvature * gdiff.dot(gdiff):
+            if Y.shape[1] < n_history:
+                Y = np.concatenate((Y, gdiff[:, np.newaxis]), axis=1)
+                S = np.concatenate((S, xdiff[:, np.newaxis]), axis=1)
+            else:
+                Y = np.roll(Y, -1, axis=1)
+                Y[:, -1] = gdiff
+                S = np.roll(S, -1, axis=1)
+                S[:, -1] = xdiff
+
+            SY = S.T.dot(Y)
+            theta = gdiff.dot(gdiff) / gdiff.dot(xdiff)
+            W = np.concatenate((Y, theta * S), axis=1)
+            L = np.tril(SY, -1)
+            D = np.diagflat(SY.diagonal())
+            M = np.asarray( np.bmat( [[-D, L.T], [L, theta * S.T.dot(S) ]] ).I )
+
+        kk += 1
+
+        # compute the projected gradient for convergence check
+        grad_proj = np.maximum( np.minimum(xmin-gradx, limits_max), limits_min) - xmin
+
+    return xmin

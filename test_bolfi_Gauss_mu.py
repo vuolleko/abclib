@@ -4,19 +4,19 @@ import abclib
 
 
 abclib.init_rand()
-true_params = np.array([1.7])
+true_params = np.array([2.7])
 simu = abclib.Simu_Gauss_mu(100)
 obs = simu(true_params)
 distance = abclib.Distance_L2()
 sumstats = [abclib.SS_Mean()]
-n_eval = 20
+n_eval = 30
 
-limits_min = np.array([0.])
-limits_max = np.array([5.])
+limits_min = np.array([-3.])
+limits_max = np.array([10.])
 hyperp_min = np.array([0., 0., 0.])
-hyperp_max = np.array([2., 2., 2.])
+hyperp_max = np.array([5., 5., 5.])
 
-n_init = 10
+n_init = 5
 init_x = [limits_min + np.random.rand(1) * (limits_max - limits_min) for ii in range(n_init)]
 mean_fun = abclib.GP_Mean(1, np.array([]))
 cov_fun = abclib.GP_Cov_Sq_Exp(1, np.array([1., 0.1, 2.]))
@@ -36,9 +36,6 @@ x1_array = np.linspace(xx.min(), xx.max(), 50)
 mus, sigma2s = gp.regression(x1_array[:, np.newaxis])
 sigmas = np.sqrt(sigma2s)
 
-if np.any( np.isnan(mus + sigmas) ):
-    print "Bad luck! Non-pos. def. covariance matrix..."
-
 fig, ax = plt.subplots(nrows=2)
 ax[0].semilogy(xx[:n_init], yy[:n_init], 'or', label='Initial samples')
 ax[0].semilogy(xx[n_init:], yy[n_init:], 'ob', label='Based on acquisition function')
@@ -49,7 +46,5 @@ ax[0].legend(loc='best')
 ax[1].plot(x1_array, mus)
 ax[1].fill_between(x1_array, mus-1.96*sigmas, mus+1.96*sigmas, alpha=0.5)
 ax[1].set_xlabel('$\mu$')
-ax[1].set_title('Posterior mean and standard deviation')
+ax[1].set_title('Posterior mean and 95% confidence interval')
 plt.show()
-
-

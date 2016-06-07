@@ -1,34 +1,40 @@
 include "gauss_proc.pyx"
 include "minimize.pyx"
-from scipy.optimize import fmin_l_bfgs_b
-
+# from scipy.optimize import fmin_l_bfgs_b
 
 def abc_bolfi(
               Simulator simu,
               double[:] observed,
               list params_init,
               int n_eval,
-              double[:] limits_min,
-              double[:] limits_max,
-              double[:] hyperp_min,
-              double[:] hyperp_max,
+              np.ndarray[np.float_t] limits_min,
+              np.ndarray[np.float_t] limits_max,
+              np.ndarray[np.float_t] hyperp_min,
+              np.ndarray[np.float_t] hyperp_max,
               Distance distance,
               list sumstats,
               GaussProc gp,
               int hp_learn_interval = 20,
               int print_iter = 10,
-              double sigma_jitter = 0.1,
-              double param_epsilon = 1e-2
+              double sigma_jitter = 0.1
               ):
     """
-    Approach using Bayesian optimization for likelihood-free inference (BOLFI)
+    The Bayesian optimization for likelihood-free inference (BOLFI) framework.
     Inputs:
     - simu: instance of the Simulator class
     - observed: vector of observations
-    - priors: list of instances of the Distribution class
+    - params_init: list of initial parameter vectors
+    - n_eval: number of output samples
+    - limits_min: vector of minimum values for parameters
+    - limits_max: vector of maximum values for parameters
+    - hyperp_min: vector of minimum values for GP hyperparameters
+    - hyperp_max: vector of maximum values for GP hyperparameters
     - distance: instance of the Distance class
     - sumstats: list of instances of the SummaryStat class
+    - gp: instance of the GaussProc class (GP)
+    - hp_learn_interval: interval for learning the GP hyperparameters
     - print_iter: report progress every i iterations over populations
+    - sigma_jitter: factor of N(0,1) to add to found parameters
     """
     cdef int n_params = len(limits_min)
     cdef int n_simu = observed.shape[0]
@@ -49,55 +55,64 @@ def abc_bolfi(
 
     cdef double[:] params = np.empty(n_params)
     cdef double[:] hyperparams = np.empty(len(hyperp_min))
+    cdef double[:] hyperparams_old
     cdef double distance_
 
-    for ii in range(1, n_eval+1):
+    ii = 0
+    jj = 0
+    while ii < n_eval:
 
         # use initial set of parameters
-        if ii <= n_init:
-            params = params_init[ii-1]
+        if ii < n_init:
+            params = params_init[ii]
 
         # get rest by minimizing the acquisition function
         else:
             # optimize hyperparameters
-            if ii % hp_learn_interval == 0:
+            if (ii+1) % hp_learn_interval == 0:
                 print "Optimizing hyperparameters..."
+                hyperparams_old = gp.get_hyperparams()
                 hyperparams = minimize_DIRECT(gp.neg_log_marginal_lh, hyperp_min, hyperp_max)
-                # hyperparams = fmin_l_bfgs_b(gp.log_marginal_lh, hyperparams,
-                  # bounds=zip(hyperp_min, hyperp_max))[0]
                 gp.set_hyperparams(hyperparams)
                 print "New hp learnt:", np.asarray(hyperparams)
 
-            # set covariances, mean and some terms based on the new params
+            # set covariances, mean and some terms based on the new params (and hyperp)
             gp.update()
             gp.precalculate_terms()
 
-            # find params that minimize the acquisition function
-            # if ii == n_init:  # avoid using boundary as initial guess
-                # params = params_init[1]
-            # params = minimize_conjgrad(gp.acquis_fun, gp.grad_acquis_fun, params)
-            # params = minimize_DIRECT(gp.acquis_fun, limits_min, limits_max,
-                                     # max_iter=200)
-            params = fmin_l_bfgs_b(gp.acquis_fun, params, fprime=gp.grad_acquis_fun,
-                                   bounds=zip(limits_min, limits_max))[0]
+            # check if new hyperp. are feasible (too slow to check online)
+            if (ii+1) % hp_learn_interval == 0:
+                if not is_pos_def( gp.covariances[:ii, :ii] ):
+                    print "Resulted in non. pos. def. covariance matrix, " \
+                          "reverting to previous hyperparameters."
+                    gp.set_hyperparams(hyperparams_old)
 
-            jj = 0
-            while True:
-                # jitter params for more exploration
-                params = params + np.random.randn(n_params) * sigma_jitter
-
-                # limit to bounds
-                params = np.clip(params, limits_min, limits_max)
-
-                # avoid too similar params (may cause non-pos. def. cov. matrix)
-                if not np.any( np.all( np.isclose(params, gp.params, atol=param_epsilon), axis=1 ) ):
-                    break
+            if not is_pos_def( gp.covariances[:ii, :ii] ):
                 jj += 1
                 if jj % print_iter == 0:
-                    print "Trying to find dissimilar parameters..."
+                    print "Cov. matrix not positive definite. Retrying... " \
+                          "{:d}/{:d} done".format(ii+1, n_eval)
+                ii -= 1  # discard latest
+                gp.ii_eval -= 1
+                gp.ii_evidence -= 1
+                gp.precalculate_terms()
+            else:
+                jj = 0
 
-            if ii % print_iter == 0:
-                print "{:d}/{:d} done".format(ii, n_eval)
+            # find params that minimize the acquisition function
+            # params = fmin_l_bfgs_b(gp.acquis_fun, params, fprime=gp.grad_acquis_fun,
+                                   # bounds=zip(limits_min, limits_max))[0]
+            params = minimize_l_bfgs_b(gp.acquis_fun, gp.grad_acquis_fun, params,
+                                       limits_min, limits_max)
+
+            # jitter params for more exploration
+            params = params + np.random.randn(n_params) * sigma_jitter
+
+            # limit to bounds
+            params = np.clip(params, limits_min, limits_max)
+
+            if (ii+1) % print_iter == 0:
+                print "{:d}/{:d} done".format(ii+1, n_eval)
 
         # run the simulator for the new parameters
         simulated = simu.run(params)
@@ -110,5 +125,7 @@ def abc_bolfi(
         distance_ = distance.get(obs_ss, sim_ss)
 
         gp.add_evidence(params, distance_)
+
+        ii += 1
 
     return np.asarray(gp.params), np.asarray(gp.responses)

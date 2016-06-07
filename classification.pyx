@@ -23,7 +23,12 @@ cdef class Classifier(Distance):
 
     def __cinit__(Classifier self, Features features,
                   int n_folds=5, Distance distance=Distance_L2()):
-
+        """
+        Inputs:
+        features: instance of Features
+        n_folds: number of folds to split the data in
+        distance: instance of Distance
+        """
         self.features = features
         self.data_features = self.features.get_view()
         self.n_features = self.data_features.shape[1]

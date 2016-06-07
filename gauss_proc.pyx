@@ -18,6 +18,14 @@ cdef class GaussProc:
     cdef int n_eval, n_dim, ii_eval, ii_evidence
 
     def __init__(self, int n_eval, int n_dim, GP_Mean mean_fun, GP_Cov cov_fun):
+        """
+        A Gaussian process.
+        Inputs:
+        - n_eval: number of output samples (used for memory allocation)
+        - n_dim: number of dimensions
+        - mean_fun: instance of GP_Mean (mean function of GP)
+        - cov_fun: instance of GP_Cov (covariance function of GP)
+        """
         self.n_eval = n_eval
         self.n_dim = n_dim
         self.ii_eval = 0
@@ -112,7 +120,7 @@ cdef class GaussProc:
         cdef double lmlh = 0.
         for ii in range(self.ii_eval):
             lmlh += self.diffvec[ii] * self.inv_K_diff[ii]
-            lmlh += 2. * self.covariances[ii, ii]
+            lmlh += 2. * log( self.chol_K[ii, ii] )
 
         return lmlh
 

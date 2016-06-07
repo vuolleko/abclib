@@ -152,7 +152,7 @@ cpdef tuple abc_reject(
 
     print "ABC-Reject accepted {:.3f}% of {} proposals with epsilon = {:.3g}".format(100. * n_output / counter, counter, epsilon)
 
-    return result, epsilon, distances
+    return np.asarray(result), epsilon, np.asarray(distances)
 
 
 cpdef double[:,:] abc_mcmc(
@@ -250,4 +250,4 @@ cpdef double[:,:] abc_mcmc(
 
     print "ABC-MCMC accepted {:.3f}% of proposals".format(100. * acc_counter / n_output)
 
-    return result
+    return np.asarray(result)

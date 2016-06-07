@@ -130,4 +130,4 @@ cpdef double[:,:] abc_seq_mc(
 
     print "ABC-SEQ-MC accepted altogether {:.3f}% of proposals".format(100. * n_output / counter)
 
-    return result
+    return np.asarray(result)

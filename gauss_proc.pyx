@@ -78,6 +78,17 @@ cdef class GaussProc:
         self.mean_fun.set_params( hyperparams[:offset] )
         self.cov_fun.set_params( hyperparams[offset:] )
 
+    cdef double[:] get_hyperparams(self):
+        """
+        Get hyperparameters for the mean and covariance functions.
+        """
+        # get current hyperparameters into one array
+        cdef int offset = self.mean_fun.n_param
+        cdef double[:] hyperparams = np.empty(offset + self.cov_fun.n_param)
+        hyperparams[:offset] = self.mean_fun.get_params()
+        hyperparams[offset:] = self.cov_fun.get_params()
+        return hyperparams
+
     def neg_log_marginal_lh(self, double[:] hyperparams):
     # cdef double log_marginal_lh(self, double[:] hyperparams):
         """
@@ -91,6 +102,10 @@ cdef class GaussProc:
         self.ii_eval = 0
         self.update()
         self.precalculate_terms()
+
+        # try to avoid hyperparams resulting in non-pos. definite cov. matrix (SLOW)
+        # if not is_pos_def( self.covariances[:self.ii_eval, :self.ii_eval] ):
+            # return 1e99
 
         # evaluate the log marginal likelihood
         cdef int ii
@@ -151,7 +166,7 @@ cdef class GaussProc:
 
             grads[jj] = self.mean_fun.grad(params_new, jj)
             grads[jj] += grad_k_vec.T.dot( np.asarray(self.inv_K_diff) )
-            if var_new != 0:  # assume gradient of diagonals = 0
+            if var_new > 0:  # assume gradient of diagonals = 0
                 grads[jj] += sqrt(self.eta_factor / var_new) * grad_v_vec.T.dot(v_vec)
 
         return np.asarray(grads)
@@ -263,6 +278,12 @@ cdef class GP_Mean:
         """
         pass
 
+    cdef double[:] get_params(self):
+        """
+        Return parameters. Empty array here.
+        """
+        return np.array([])
+
 
 cdef class GP_Mean_Cvx(GP_Mean):
     """
@@ -307,6 +328,17 @@ cdef class GP_Mean_Cvx(GP_Mean):
             self.b_factor[ii] = params[ii + self.n_dim]
         self.c_factor = params[2 * self.n_dim]
 
+    cdef double[:] get_params(self):
+        """
+        Return parameters in order: a, b, c.
+        """
+        cdef int ii
+        cdef double[:] params = np.empty(self.n_param)
+        for ii in range(self.n_dim):
+            params[ii] = self.a_factor[ii]
+            params[ii + self.n_dim] = self.b_factor[ii]
+        params[2 * self.n_dim] = self.c_factor
+
 
 # ****************** Covariance functions ******************
 
@@ -347,6 +379,12 @@ cdef class GP_Cov:
         Set parameters.
         """
         self.var_factor = params[0]
+
+    cdef double[:] get_params(self):
+        """
+        Set parameters.
+        """
+        return np.array([ self.var_factor ])
 
 
 cdef class GP_Cov_Sq_Exp(GP_Cov):
@@ -396,8 +434,19 @@ cdef class GP_Cov_Sq_Exp(GP_Cov):
         Set parameters in order: sigma2_signal, sigma2_obs, scale.
         """
         cdef int ii
-
         self.sigma2_signal = params[0]
         self.sigma2_obs = params[1]
         for ii in range(self.n_dim):
             self.scale2[ii] = params[ii + 2]
+
+    cdef double[:] get_params(self):
+        """
+        Return parameters in order: sigma2_signal, sigma2_obs, scale.
+        """
+        cdef double[:] params = np.empty( self.n_param )
+        cdef int ii
+        params[0] = self.sigma2_signal
+        params[1] = self.sigma2_obs
+        for ii in range(self.n_dim):
+            params[ii + 2] = self.scale2[ii]
+        return params

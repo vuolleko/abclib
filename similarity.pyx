@@ -34,7 +34,7 @@ cdef class Distance_L1(Distance):
         cdef int ii
 
         for ii in range(data1.shape[0]):
-            result += (data1[ii] - data2[ii])
+            result += abs(data1[ii] - data2[ii])
 
         return result
 
@@ -100,10 +100,6 @@ cdef class Distance_INT_PER(Distance):
 
     cdef double get(Distance_INT_PER self, double[:] data1, double[:] data2):
         cdef double[:] spec1 = scipy.signal.periodogram(data2, window=self.window)[1]
-
-        # cdef complex[:] fft = np.fft.rfft(data2)
-        # cdef double[:] spec1 = np.empty(nn)
-
         cdef int ii
         cdef double spec_sum = sum_of(spec1)
 
@@ -176,7 +172,6 @@ cdef class Distance_DTW_Keogh(Distance_DTW):
         if self.obs_prev != data1[0]:
             self.obs_prev = data1[0]
             self.dist_min = INFINITY
-            # print "set dist to inf"
 
         # LB_Keogh <= DTW
         result = self.lowerbound_Keogh( data1, data2 )

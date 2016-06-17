@@ -1,10 +1,11 @@
-cpdef double[:,:] abc_seq_mc(
+cpdef double[:,:,:] abc_seq_mc(
                              int n_output,
                              Simulator simu,
                              double[:] observed,
                              list priors,
                              Distance distance,
                              list sumstats,
+                             list proposals,
                              double[:] schedule,
                              int n_populations,
                              double p_quantile = 0.5,
@@ -19,6 +20,7 @@ cpdef double[:,:] abc_seq_mc(
     - priors: list of instances of the Distribution class
     - distance: instance of the Distance class
     - sumstats: list of instances of the SummaryStat class
+    - proposals: list of instances of the Distribution class
     - schedule: vector of acceptance thresholds (hybrid used)
     - n_populations: number of iterations over the population
     - p_quantile: criterion for automatic acceptance threshold selection (hybrid used)
@@ -41,26 +43,25 @@ cpdef double[:,:] abc_seq_mc(
         sim_ss = np.empty(n_simu)
 
     # initialize with basic rejection sampler, which also gives a starting epsilon
-    cdef double[:,:] result
+    cdef double[:,:,:] result = np.empty((n_populations, n_output, n_params))
+    cdef double[:,:] result0
     cdef double[:] distances
     cdef double epsilon
-    result, epsilon, distances = abc_reject(n_output, simu, observed, priors, distance, sumstats,
-                                            p_quantile=p_quantile)
+    result0, epsilon, distances = abc_reject(n_output, simu, observed, priors,
+                                             distance, sumstats, p_quantile=p_quantile)
 
-    cdef double[:,:] result_old = np.empty_like(result)
+    result[0, :, :] = result0
     cdef double[:] weights = np.ones(n_output)
     cdef double[:] weights_cumsum = np.empty_like(weights)
     cdef double weights_sum, weights_sum1
-    cdef double[:] sd = np.empty(n_params)
+    cdef double[:] wvar = np.empty(n_params)
 
     cdef int counter = 0
     cdef int counter_pop
     cdef double randsel
-    cdef Normal normal = Normal().__new__(Normal)  # proposal distribution
 
-    for tt in range(n_populations-1):
+    for tt in range(1, n_populations):
         counter_pop = 0
-        result_old = result.copy()
 
         # get new epsilon
         epsilon = fmax( quantile(distances, p_quantile), schedule[tt] )
@@ -75,9 +76,9 @@ cpdef double[:,:] abc_seq_mc(
 
         # update variance of proposals
         for jj in range(n_params):
-            sd[jj] = 2. * sqrt( weighted_var_of( result[:, jj], weights ) )
+            wvar[jj] = 2. * weighted_var_of( result[tt-1, :, jj], weights )
 
-        print "Using threshold {} and standard deviations {}".format(epsilon, np.asarray(sd))
+        print "Using threshold {} and variance {}".format(epsilon, np.asarray(wvar))
 
         for ii in range(1, n_output):
 
@@ -91,9 +92,9 @@ cpdef double[:,:] abc_seq_mc(
 
                 # propose new parameter set near the sampled one
                 for jj in range(n_params):
-                    result[ii, jj] = normal.rvs( result_old[sel_ind, jj], sd[jj] )
+                    result[tt, ii, jj] = (<Distribution> proposals[jj]).rvs( result[tt-1, sel_ind, jj], wvar[jj] )
 
-                simulated = simu.run(result[ii, :])
+                simulated = simu.run(result[tt, ii, :])
 
                 if n_sumstats > 0:
                     for kk in range(n_sumstats):
@@ -118,11 +119,12 @@ cpdef double[:,:] abc_seq_mc(
             for kk in range(n_output):
                 weights_sum1 = weights[kk]
                 for jj in range(n_params):
-                    weights_sum1 *= normal.pdf( result[ii, jj], result_old[kk, jj], sd[jj] )
+                    weights_sum1 *= (<Distribution> proposals[jj]).pdf(
+                        result[tt, ii, jj], result[tt-1, kk, jj], wvar[jj] )
                 weights_sum += weights_sum1
 
             for jj in range(n_params):
-                weights[ii] *= (<Distribution> priors[jj]).pdf0(result[ii, jj])
+                weights[ii] *= (<Distribution> priors[jj]).pdf0(result[tt, ii, jj])
 
             weights[ii] /= weights_sum
 

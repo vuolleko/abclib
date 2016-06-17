@@ -5,10 +5,13 @@ cdef class Distribution:
     """
     A dummy parent class for probability distributions.
     """
-    cdef double loc, scale
-    def __cinit__(self, double loc=0., double scale=1.):
+    cdef double loc, scale, minval, maxval
+    def __cinit__(self, double loc=0., double scale=1., double minval=-np.inf,
+                  double maxval=np.inf):
         self.loc = loc
         self.scale = scale
+        self.minval = minval
+        self.maxval = maxval
 
     cdef double rvs(self, double loc, double scale) nogil:
         pass
@@ -50,8 +53,13 @@ cdef class Normal(Distribution):
         """
         Returns x ~ N(loc, scale) using Box-Muller transform.
         """
-        cdef double n01 = sqrt(-2. * log(runif())) * cos(2. * PI * runif())
-        return loc + scale * n01
+        cdef double result, n01
+        while True:
+            n01 = sqrt(-2. * log(runif())) * cos(2. * PI * runif())
+            result = loc + scale * n01
+            if (result >= self.minval) & (result <= self.maxval):
+                break
+        return result
 
     cdef double pdf(self, double x, double loc, double scale) nogil:
         """

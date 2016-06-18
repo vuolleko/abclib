@@ -5,9 +5,10 @@ cdef class Simulator:
     A dummy parent class for simulators.
     """
     # (cdef int n_simu, n_samples) defined in .pxd
-    def __cinit__(self, int n_simu, int n_samples=1):
+    def __cinit__(self, int n_simu, int n_samples=1, int normalized=0):
         self.n_simu = n_simu
         self.n_samples = n_samples
+        self.normalized = normalized
 
     def __call__(self, double[:] params):
         return self.run(params)
@@ -16,19 +17,23 @@ cdef class Simulator:
         """
         Run the simulator and take average over samples if needed.
         """
-        cdef double[:,:] all_res = np.empty((self.n_samples, self.n_simu))
-        cdef double[:] avg_res = np.empty(self.n_simu)
+        cdef double[:,:] all_res
+        cdef double[:] result = np.empty(self.n_simu)
         cdef int ii
 
         if self.n_samples == 1:
-            return self.run1(params)
+            result = self.run1(params)
 
-        else:  # average
+        else:  # average over several runs
+            all_res = np.empty((self.n_samples, self.n_simu))
             for ii in range(self.n_samples):
                 all_res[ii, :] = self.run1(params)
             for ii in range(self.n_simu):
-                avg_res[ii] = mean_of(all_res[:, ii])
-            return avg_res
+                result[ii] = mean_of(all_res[:, ii])
+
+        if self.normalized:
+            normalize(result)
+        return result
 
     cdef double[:] run1(self, double[:] params):
         pass

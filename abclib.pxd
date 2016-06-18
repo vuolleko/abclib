@@ -14,7 +14,7 @@ cdef class Simulator:
     """
     A parent class for simulators.
     """
-    cdef int n_simu, n_samples
+    cdef int n_simu, n_samples, normalized
     cdef double[:] run(self, double[:] params)
     cdef double[:] run1(self, double[:] params)
 

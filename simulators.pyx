@@ -5,38 +5,81 @@ cdef class Simulator:
     A dummy parent class for simulators.
     """
     # (cdef int n_simu, n_samples) defined in .pxd
-    def __cinit__(self, int n_simu, int n_samples=1, int normalized=0):
+    def __cinit__(self, int n_simu, list sumstats=[],
+                  int n_samples=1, int normalized=0):
+        """
+        Initializer for the simulator class.
+        Inputs:
+        - n_simu: length of output directly from simulator
+        - sumstats: list of instances of the SummaryStat class
+        - n_samples: number of repeated simulator runs
+        - normalized: whether to normalize simulator output (before sumstats)
+        """
         self.n_simu = n_simu
         self.n_samples = n_samples
         self.normalized = normalized
+        self.n_sumstats = len(sumstats)
+        self.sumstats = sumstats
 
     def __call__(self, double[:] params):
         return self.run(params)
 
     cdef double[:] run(self, double[:] params):
         """
-        Run the simulator and take average over samples if needed.
+        Run the simulator and take sumstats.
+        Average over sumstats if needed.
         """
+        cdef double[:] simu_output = np.empty(self.n_simu)
         cdef double[:,:] all_res
-        cdef double[:] result = np.empty(self.n_simu)
-        cdef int ii
+        cdef double[:] result
+        cdef int ii, jj
 
-        if self.n_samples == 1:
-            result = self.run1(params)
-
-        else:  # average over several runs
+        # init arrays with proper size
+        if self.n_sumstats > 0:
+            all_res = np.empty((self.n_samples, self.n_sumstats))
+            result = np.empty(self.n_sumstats)
+        else:
             all_res = np.empty((self.n_samples, self.n_simu))
-            for ii in range(self.n_samples):
-                all_res[ii, :] = self.run1(params)
-            for ii in range(self.n_simu):
+            result = np.empty(self.n_simu)
+
+        # Run simulator for n_samples
+        for ii in range(self.n_samples):
+            simu_output = self.run1(params)
+
+            if self.normalized:
+                normalize(simu_output)
+
+            if self.n_sumstats > 0:  # apply summary statistics
+                result = np.array([
+                    ( <SummaryStat> self.sumstats[jj] ).get(simu_output)
+                                   for jj in range(self.n_sumstats) ])
+                all_res[ii, :] = result
+
+            else:  # use the result from simulator directly
+                all_res[ii, :] = simu_output
+
+        # Take mean over results
+        if self.n_samples == 1:
+            result = all_res[0, :]
+        else:
+            for ii in range(all_res.shape[1]):
                 result[ii] = mean_of(all_res[:, ii])
 
-        if self.normalized:
-            normalize(result)
         return result
 
     cdef double[:] run1(self, double[:] params):
         pass
+
+    def from_obs(self, double[:] observed):
+        """
+        Calculate summary statistics for a set of observations.
+        """
+        cdef int jj
+        cdef result
+        result = np.array([
+                    ( <SummaryStat> self.sumstats[jj] ).get(observed)
+                           for jj in range(self.n_sumstats) ])
+        return result
 
 
 cdef class Simu_Gauss(Simulator):

@@ -5,7 +5,6 @@ cpdef double[:,:] sample_abc(
                            double[:] fixed_params,
                            double[:] observed,
                            Distance distance,
-                           sumstats,
                            distribs,
                            int n_output,
                            double epsilon,
@@ -21,7 +20,6 @@ cpdef double[:,:] sample_abc(
     - fixed_params: constant parameter for the simulator
     - observed: a vector of observations
     - distance: instance of distance class
-    - sumstats: list of instances of summary statistics classes
     - distribs: list of parameter distributions
     - n_output: number of output samples
     - epsilon: tolerance in acceptance criterion

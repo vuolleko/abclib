@@ -66,9 +66,8 @@ cpdef tuple abc_reject(
                        double[:] observed,
                        list priors,
                        Distance distance,
-                       list sumstats,
                        double p_quantile = 0.1,
-                       int print_iter = 100000
+                       int print_iter = 10000
                        ):
     """
     Likelihood-free rejection sampler with automatic selection of acceptance threshold.
@@ -78,7 +77,6 @@ cpdef tuple abc_reject(
     - observed: vector of observations
     - priors: list of instances of the Distribution class
     - distance: instance of the Distance class
-    - sumstats: list of instances of the SummaryStat class
     - p_quantile: criterion for automatic acceptance threshold selection
     - print_iter: report progress every i iterations
     """
@@ -88,37 +86,17 @@ cpdef tuple abc_reject(
     cdef double[:] params_prop = np.empty(n_params)
     cdef double[:] simulated = np.empty_like(observed)
 
-    cdef int n_sumstats = len(sumstats)
-
-    cdef double[:] obs_ss
-    cdef double[:] sim_ss
-    if n_sumstats > 0:
-        obs_ss = np.array([(<SummaryStat> sumstats[ii]).get(observed)
-                           for ii in range(n_sumstats)])
-        sim_ss = np.empty(n_sumstats)
-    else:
-        obs_ss = observed
-        sim_ss = np.empty(n_simu)
-
     cdef double[:,:] result = np.empty((n_output, n_params))
 
-    # find a suitable acceptance threshold epsilon
+    # use quantile to find a suitable acceptance threshold epsilon
     cdef double[:] distances = np.empty(n_output)
-
     for ii in range(n_output):
         for jj in range(n_params):
             params_prop[jj] = (<Distribution> priors[jj]).rvs0()
 
         simulated = simu.run(params_prop)
-
-        if n_sumstats > 0:
-            for kk in range(n_sumstats):
-                sim_ss[kk] = (<SummaryStat> sumstats[kk]).get(simulated)
-        else:
-            sim_ss[:] = simulated
-
         result[ii, :] = params_prop
-        distances[ii] = distance.get(obs_ss, sim_ss)
+        distances[ii] = distance.get(observed, simulated)
 
     cdef double epsilon = quantile(distances.copy(), p_quantile)
 
@@ -134,14 +112,8 @@ cpdef tuple abc_reject(
 
                 simulated = simu.run(params_prop)
 
-                if n_sumstats > 0:
-                    for kk in range(n_sumstats):
-                        sim_ss[kk] = (<SummaryStat> sumstats[kk]).get(simulated)
-                else:
-                    sim_ss[:] = simulated
-
                 counter += 1
-                distances[ii] = distance.get(obs_ss, sim_ss)
+                distances[ii] = distance.get(observed, simulated)
                 if (distances[ii] < epsilon):
                     break
 
@@ -161,7 +133,6 @@ cpdef double[:,:] abc_mcmc(
                            double[:] observed,
                            list priors,
                            Distance distance,
-                           list sumstats,
                            list proposals,
                            double[:] init_guess,
                            double epsilon,
@@ -176,7 +147,6 @@ cpdef double[:,:] abc_mcmc(
     - observed: vector of observations
     - priors: list of instances of the Distribution class
     - distance: instance of the Distance class
-    - sumstats: list of instances of the SummaryStat class
     - proposals: list of instances of the Distribution class (Markov kernels)
     - init_guess: guess
     - epsilon: acceptance threshold
@@ -184,21 +154,8 @@ cpdef double[:,:] abc_mcmc(
     - print_iter: report progress every i iterations
     """
     cdef int n_params = len(priors)
-    cdef int n_simu = observed.shape[0]
     cdef int ii, jj, kk
     cdef double[:] simulated = np.empty_like(observed)
-
-    cdef int n_sumstats = len(sumstats)
-    cdef double[:] obs_ss
-    cdef double[:] sim_ss
-    if n_sumstats > 0:
-        obs_ss = np.array([(<SummaryStat> sumstats[ii]).get(observed)
-                           for ii in range(n_sumstats)])
-        sim_ss = np.empty(n_sumstats)
-    else:
-        obs_ss = observed
-        sim_ss = np.empty(n_simu)
-
     cdef double accprob
 
     cdef double[:,:] result = np.empty((n_output, n_params))
@@ -233,13 +190,8 @@ cpdef double[:,:] abc_mcmc(
 
         else:  # run simulator with the proposed parameters
             simulated = simu.run(result[ii, :])
-            if n_sumstats > 0:
-                for kk in range(n_sumstats):
-                    sim_ss[kk] = (<SummaryStat> sumstats[kk]).get(simulated)
-            else:
-                sim_ss[:] = simulated
 
-            if (distance.get(obs_ss, sim_ss) < epsilon):
+            if (distance.get(observed, simulated) < epsilon):
                 acc_counter += 1
             else:
                 result[ii, :] = result[ii-1, :]

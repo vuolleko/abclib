@@ -4,7 +4,6 @@ cpdef double[:,:,:] abc_seq_mc(
                              double[:] observed,
                              list priors,
                              Distance distance,
-                             list sumstats,
                              list proposals,
                              double[:] schedule,
                              int n_populations,
@@ -19,7 +18,6 @@ cpdef double[:,:,:] abc_seq_mc(
     - observed: vector of observations
     - priors: list of instances of the Distribution class
     - distance: instance of the Distance class
-    - sumstats: list of instances of the SummaryStat class
     - proposals: list of instances of the Distribution class
     - schedule: vector of acceptance thresholds (hybrid used)
     - n_populations: number of iterations over the population
@@ -31,24 +29,13 @@ cpdef double[:,:,:] abc_seq_mc(
     cdef int ii, jj, kk, tt, sel_ind
     cdef double[:] simulated = np.empty_like(observed)
 
-    cdef int n_sumstats = len(sumstats)
-    cdef double[:] obs_ss
-    cdef double[:] sim_ss
-    if n_sumstats > 0:
-        obs_ss = np.array([(<SummaryStat> sumstats[ii]).get(observed)
-                           for ii in range(n_sumstats)])
-        sim_ss = np.empty(n_sumstats)
-    else:
-        obs_ss = observed
-        sim_ss = np.empty(n_simu)
-
     # initialize with basic rejection sampler, which also gives a starting epsilon
     cdef double[:,:,:] result = np.empty((n_populations, n_output, n_params))
     cdef double[:,:] result0
     cdef double[:] distances
     cdef double epsilon
     result0, epsilon, distances = abc_reject(n_output, simu, observed, priors,
-                                             distance, sumstats, p_quantile=p_quantile)
+                                             distance, p_quantile=p_quantile)
 
     result[0, :, :] = result0
     cdef double[:] weights = np.ones(n_output)
@@ -96,16 +83,10 @@ cpdef double[:,:,:] abc_seq_mc(
 
                 simulated = simu.run(result[tt, ii, :])
 
-                if n_sumstats > 0:
-                    for kk in range(n_sumstats):
-                        sim_ss[kk] = (<SummaryStat> sumstats[kk]).get(simulated)
-                else:
-                    sim_ss[:] = simulated
-
                 counter += 1
                 counter_pop += 1
 
-                distances[ii] = distance.get(obs_ss, sim_ss)
+                distances[ii] = distance.get(observed, simulated)
                 if (distances[ii] < epsilon):
                     break
 

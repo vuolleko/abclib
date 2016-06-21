@@ -16,14 +16,13 @@ priors = [abclib.Uniform(0., 5.), abclib.Uniform(0., 5.)]
 proposals = [abclib.Normal(scale=1.), abclib.Normal(scale=1.)]
 features = abclib.Feature_triplets(observed)
 distance = abclib.Classifier(features)
-sumstats = []
 
-params, epsilon, distances = abclib.abc_reject(1000, simu, observed, priors, distance, sumstats, p_quantile=0.01)
+params, epsilon, distances = abclib.abc_reject(1000, simu, observed, priors, distance, p_quantile=0.1)
 
 params_guess = params.mean(axis=0)
 
-print "Trying with initial guess: {}".format( params_guess )
-params = abclib.abc_mcmc(n_output, simu, observed, priors, distance, sumstats, proposals, params_guess, epsilon, symmetric_proposal=True)
+print "Trying with initial guess: {} and epsilon {}".format( params_guess, epsilon )
+params = abclib.abc_mcmc(n_output, simu, observed, priors, distance, proposals, params_guess, epsilon, symmetric_proposal=True)
 
 params = params[1000:, :]
 

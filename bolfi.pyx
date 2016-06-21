@@ -1,6 +1,6 @@
 include "gauss_proc.pyx"
 include "minimize.pyx"
-# from scipy.optimize import fmin_l_bfgs_b
+from scipy.optimize import fmin_l_bfgs_b
 
 def abc_bolfi(
               Simulator simu,
@@ -12,7 +12,6 @@ def abc_bolfi(
               np.ndarray[np.float_t] hyperp_min,
               np.ndarray[np.float_t] hyperp_max,
               Distance distance,
-              list sumstats,
               GaussProc gp,
               int hp_learn_interval = 20,
               int print_iter = 10,
@@ -30,7 +29,6 @@ def abc_bolfi(
     - hyperp_min: vector of minimum values for GP hyperparameters
     - hyperp_max: vector of maximum values for GP hyperparameters
     - distance: instance of the Distance class
-    - sumstats: list of instances of the SummaryStat class
     - gp: instance of the GaussProc class (GP)
     - hp_learn_interval: interval for learning the GP hyperparameters
     - print_iter: report progress every i iterations over populations
@@ -41,17 +39,6 @@ def abc_bolfi(
     cdef int n_init = len(params_init)
     cdef int ii, jj
     cdef double[:] simulated = np.empty_like(observed)
-
-    cdef int n_sumstats = len(sumstats)
-    cdef double[:] obs_ss
-    cdef double[:] sim_ss
-    if n_sumstats > 0:
-        obs_ss = np.array([(<SummaryStat> sumstats[ii]).get(observed)
-                           for ii in range(n_sumstats)])
-        sim_ss = np.empty(n_sumstats)
-    else:
-        obs_ss = observed
-        sim_ss = np.empty(n_simu)
 
     cdef double[:] params = np.empty(n_params)
     cdef double[:] hyperparams = np.empty(len(hyperp_min))
@@ -91,7 +78,7 @@ def abc_bolfi(
                 jj += 1
                 if jj % print_iter == 0:
                     print "Cov. matrix not positive definite. Retrying... " \
-                          "{:d}/{:d} done".format(ii+1, n_eval)
+                          "{:d}/{:d} done".format(ii, n_eval)
                 ii -= 1  # discard latest
                 gp.ii_eval -= 1
                 gp.ii_evidence -= 1
@@ -100,10 +87,10 @@ def abc_bolfi(
                 jj = 0
 
             # find params that minimize the acquisition function
-            # params = fmin_l_bfgs_b(gp.acquis_fun, params, fprime=gp.grad_acquis_fun,
-                                   # bounds=zip(limits_min, limits_max))[0]
-            params = minimize_l_bfgs_b(gp.acquis_fun, gp.grad_acquis_fun, params,
-                                       limits_min, limits_max)
+            params = fmin_l_bfgs_b(gp.acquis_fun, params, fprime=gp.grad_acquis_fun,
+                                   bounds=zip(limits_min, limits_max))[0]
+            # params = minimize_l_bfgs_b(gp.acquis_fun, gp.grad_acquis_fun, params,
+                                       # limits_min, limits_max)
 
             # jitter params for more exploration
             params = params + np.random.randn(n_params) * sigma_jitter
@@ -116,13 +103,8 @@ def abc_bolfi(
 
         # run the simulator for the new parameters
         simulated = simu.run(params)
-        if n_sumstats > 0:
-            for kk in range(n_sumstats):
-                sim_ss[kk] = (<SummaryStat> sumstats[kk]).get(simulated)
-        else:
-            sim_ss[:] = simulated
 
-        distance_ = distance.get(obs_ss, sim_ss)
+        distance_ = distance.get(observed, simulated)
 
         gp.add_evidence(params, distance_)
 

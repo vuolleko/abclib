@@ -20,6 +20,21 @@ cdef inline double mean_of(double[:] data) nogil:
     return sum_of(data) / data.shape[0]
 
 
+cdef inline double median_of(double[:] data):
+    """
+    Median of data.
+    """
+    cdef int nn = data.shape[0]
+    cdef int ii = nn / 2
+    cdef double[:] data2 = data.copy()
+
+    sort(data2)
+    if nn % 2 == 1:
+        return data2[ii]
+    else:
+        return (data2[ii-1] + data2[ii]) / 2.
+
+
 cdef inline double weighted_mean_of(double[:] data, double[:] weights) nogil:
     """
     Weighted mean of data.

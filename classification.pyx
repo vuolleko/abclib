@@ -59,8 +59,6 @@ cdef class Classifier(Distance):
         self.test_labels = np.empty(self.nn - self.nn_1fold, dtype=np.int32)
         self.predicted = np.empty(self.nn - self.nn_1fold, dtype=np.int32)
 
-
-
     cdef double get(Classifier self, double[:] data1, double[:] data2):
         cdef int matches = 0
         cdef int ii, jj, kk, ind_test, ind_train

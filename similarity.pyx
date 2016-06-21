@@ -38,18 +38,23 @@ cdef class Distance_L1(Distance):
 
         return result
 
-cdef class Distance_L2_Nrlz(Distance):
+cdef class Distance_ChiSq(Distance):
     """
-    (Squared) L2 distance between two vectors normalized by observation.
+    Distance based on Chi-squared goodness-of-fit criterion.
     """
-    cdef double get(Distance_L2_Nrlz self, double[:] data1, double[:] data2):
+    cdef double get(Distance_ChiSq self, double[:] data1, double[:] data2):
         cdef double result = 0.
-        cdef double temp
+        cdef double result1
         cdef int ii
 
         for ii in range(data1.shape[0]):
-            temp = (data1[ii] - data2[ii]) / data1[ii]
-            result += temp * temp
+            result1 = data1[ii] - data2[ii]
+            result1 = result1 * result1
+            if data1[ii] == 0.:
+                result1 /= 1e-16
+            else:
+                result1 /= data1[ii]
+            result += result1
 
         return result
 
@@ -247,6 +252,13 @@ cdef class SS_Mean(SummaryStat):
     cdef double get(SS_Mean self, double[:] data):
         return sum_of(data) / data.shape[0]
 
+cdef class SS_Median(SummaryStat):
+    """
+    Median of vector.
+    """
+    cdef double get(SS_Median self, double[:] data):
+        return median_of(data)
+
 cdef class SS_Var(SummaryStat):
     """
     Variance of a vector.
@@ -284,7 +296,7 @@ cdef class SS_MedianRatio2(SummaryStat):
             else:
                 ratio[ii] = data[ii] * 1e99
 
-        return np.median(ratio)
+        return median_of(ratio)
 
 
 # ****************** Normalizing function ***************

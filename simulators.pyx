@@ -126,9 +126,8 @@ cdef class Ricker(Simulator):
         cdef double[:] stock = np.empty(self.n_simu)
         cdef int ii
 
-        stock[0] = 1e-6
+        stock[0] = 2.
         for ii in range(1, self.n_simu):
-            # stock[ii] = stock[ii-1] * exp(params[0] * (1. - stock[ii-1] / self.capacity))
             stock[ii] = params[0] * stock[ii-1] * exp( -stock[ii-1] )
 
         return stock
@@ -141,13 +140,9 @@ cdef class StochasticRicker(Simulator):
     cdef double sd
     cdef double scaling
 
-    # def __cinit__(self, double sd=1., double scaling=1.):
-    #     self.sd = sd
-    #     self.scaling = scaling
-
     cdef double[:] run1(self, double[:] params):
         """
-        - params[0]: rate
+        - params[0]: log rate
         - params[1]: standard deviation of innovations
         - params[2]: scaling of the expected value from Poisson
         """
@@ -156,9 +151,9 @@ cdef class StochasticRicker(Simulator):
         cdef Normal norm = Normal().__new__(Normal)
         cdef Poisson pois = Poisson().__new__(Poisson)
 
-        stock[0] = 1e-6
+        stock[0] = 2.
         for ii in range(1, self.n_simu):
-            stock[ii] = params[0] * stock[ii-1] * exp(-stock[ii-1] + norm.rvs(0., params[1]))
+            stock[ii] = stock[ii-1] * exp(params[0] - stock[ii-1] + norm.rvs(0., params[1]))
 
         # the observed stock is Poisson distributed
         for ii in range(self.n_simu):

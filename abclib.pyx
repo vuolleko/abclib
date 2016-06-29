@@ -71,6 +71,12 @@ cpdef tuple abc_reject(
                        ):
     """
     Likelihood-free rejection sampler with automatic selection of acceptance threshold.
+
+    Based on Algorithm 2 in:
+    Jean-Michel Marin, Pierre Pudlo, Christian P Robert, and Robin J Ryder:
+    Approximate bayesian computational methods, Statistics and Computing,
+    22(6):1167–1180, 2012.
+
     Inputs:
     - n_output: number of output samples
     - simu: instance of the Simulator class
@@ -141,6 +147,12 @@ cpdef double[:,:] abc_mcmc(
                            ):
     """
     Likelihood-free MCMC sampler.
+
+    Based on Algorithm 3 in:
+    Jean-Michel Marin, Pierre Pudlo, Christian P Robert, and Robin J Ryder:
+    Approximate bayesian computational methods, Statistics and Computing,
+    22(6):1167–1180, 2012.
+
     Inputs:
     - n_output: number of output samples
     - simu: instance of the Simulator class

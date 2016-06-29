@@ -25,9 +25,9 @@ cdef class Classifier(Distance):
                   int n_folds=5, Distance distance=Distance_L2()):
         """
         Inputs:
-        features: instance of Features
-        n_folds: number of folds to split the data in
-        distance: instance of Distance
+        - features: instance of Features
+        - n_folds: number of folds to split the data in
+        - distance: instance of Distance
         """
         self.features = features
         self.data_features = self.features.get_view()

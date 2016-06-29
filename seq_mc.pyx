@@ -12,6 +12,12 @@ cpdef double[:,:,:] abc_seq_mc(
                              ):
     """
     Likelihood-free sequential MC sampler.
+
+    Based on Algorithm 4 in:
+    Jean-Michel Marin, Pierre Pudlo, Christian P Robert, and Robin J Ryder:
+    Approximate bayesian computational methods, Statistics and Computing,
+    22(6):1167–1180, 2012.
+
     Inputs:
     - n_output: number of output samples
     - simu: instance of the Simulator class

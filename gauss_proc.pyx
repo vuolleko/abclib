@@ -4,6 +4,11 @@
 cdef class GaussProc:
     """
     Implements a Gaussian process for usage with Bayesian optimization.
+
+    See e.g.
+    Michael U Gutmann and Jukka Corander: Bayesian optimization for
+    likelihood-free inference of simulator-based statistical models,
+    arXiv preprint arXiv:1501.03291, 2015.
     """
     cdef double[:, :] params
     cdef double[:] responses
@@ -264,6 +269,11 @@ cdef class GP_Mean:
     cdef int n_dim, n_param
 
     def __init__(self, int n_dim, double[:] params_init):
+        """
+        Inputs:
+        - ndim: number of parameters modeled by the GP
+        - params_init: a vector of initial parameter values for the mean function
+        """
         self.n_dim = n_dim
         self.n_param = 0
         self.set_params(params_init)
@@ -360,6 +370,11 @@ cdef class GP_Cov:
     cdef double var_factor
 
     def __init__(self, int n_dim, double[:] params_init):
+        """
+        Inputs:
+        - ndim: number of parameters modeled by the GP
+        - params_init: a vector of initial parameter values for the cov. function
+        """
         self.n_dim = n_dim
         self.n_param = 1
         self.set_params(params_init)

@@ -19,6 +19,12 @@ def abc_bolfi(
               ):
     """
     The Bayesian optimization for likelihood-free inference (BOLFI) framework.
+
+    Following the approach described in:
+    Michael U Gutmann and Jukka Corander: Bayesian optimization for
+    likelihood-free inference of simulator-based statistical models,
+    arXiv preprint arXiv:1501.03291, 2015.
+
     Inputs:
     - simu: instance of the Simulator class
     - observed: vector of observations

@@ -1,3 +1,5 @@
+__Note__: this project continues under [ELFI](https://github.com/HIIT/elfi).
+
 # ABClib
 A library for approximate Bayesian computation. Includes also implementations of various auxiliary algorithms and various test cases. 
 
